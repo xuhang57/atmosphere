@@ -324,6 +324,23 @@ class ApplicationMembership(models.Model):
     group = models.ForeignKey('Group')
     can_edit = models.BooleanField(default=False)
 
+    @classmethod
+    def available_for(self, atmo_user):
+        """
+        Given a user, return the queryset that will map to all
+        of their available application memberships
+        """
+        if isinstance(atmo_user, AnonymousUser):
+            return ApplicationMembership.objects.none()
+        # I am the author of these apps
+        my_apps_membership_list = ApplicationMembership.objects.filter(
+            application__created_by=atmo_user)
+        # I have been included in these apps
+        my_apps_membership_list |= ApplicationMembership.objects.filter(
+            group__user=atmo_user)
+        return my_apps_membership_list.distinct()
+
+
     def __unicode__(self):
         return "%s %s %s" %\
             (self.group.name,
