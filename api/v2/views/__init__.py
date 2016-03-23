@@ -8,6 +8,7 @@ from .identity import IdentityViewSet
 from .identity_membership import IdentityMembershipViewSet
 from .image import ImageViewSet
 from .image_bookmark import ImageBookmarkViewSet
+from .image_membership import ImageMembershipViewSet
 from .image_tag import ImageTagViewSet
 from .image_version import ImageVersionViewSet
 from .image_version_boot_script import ImageVersionBootScriptViewSet

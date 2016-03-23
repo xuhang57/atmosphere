@@ -15,17 +15,6 @@ class AtmosphereUser(AbstractUser):
     selected_identity = models.ForeignKey('Identity', blank=True, null=True)
     end_date = models.DateTimeField(null=True, blank=True)
 
-    def group_ids(self):
-        return self.group_set.values_list('id', flat=True)
-
-    def provider_ids(self):
-        return self.identity_set.values_list('provider', flat=True)
-
-    def user_quota(self):
-        identity = self.select_identity()
-        identity_member = identity.identity_memberships.all()[0]
-        return identity_member.quota
-
     @property
     def is_enabled(self):
         """
@@ -39,10 +28,14 @@ class AtmosphereUser(AbstractUser):
             (not self.end_date or self.end_date > now_time)
 
     @property
+    def current_groups(self):
+        return self.group_set.all()
+
+    @property
     def current_providers(self):
         from core.models import Provider
         all_providers = Provider.objects.none()
-        for group in self.group_set.all():
+        for group in self.current_groups:
             all_providers |= Provider.objects.filter(id__in=group.current_identities.values_list('provider', flat=True))
         return all_providers
 
@@ -50,9 +43,20 @@ class AtmosphereUser(AbstractUser):
     def current_identities(self):
         from core.models import Identity
         all_identities = Identity.objects.none()
-        for group in self.group_set.all():
+        for group in self.current_groups:
             all_identities |= group.current_identities.all()
         return all_identities
+
+    def group_ids(self):
+        return self.current_groups.values_list('id', flat=True)
+
+    def provider_ids(self):
+        return self.identity_set.values_list('provider', flat=True)
+
+    def user_quota(self):
+        identity = self.select_identity()
+        identity_member = identity.identity_memberships.all()[0]
+        return identity_member.quota
 
     def can_use_identity(self, identity_id):
         return self.current_identities.filter(id=identity_id).count() > 0
@@ -72,7 +76,7 @@ class AtmosphereUser(AbstractUser):
 
         from core.models import IdentityMembership
 
-        for group in self.group_set.all():
+        for group in self.current_groups:
             membership = IdentityMembership.get_membership_for(group.name)
             if not membership:
                 continue
