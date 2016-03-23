@@ -12,6 +12,7 @@ from api.v2.serializers.fields.base import ModelRelatedField
 
 class ImageMembershipSerializer(serializers.HyperlinkedModelSerializer):
     image = ModelRelatedField(
+        source='application',
         queryset=Image.objects.all(),
         serializer_class=ImageSummarySerializer,
         style={'base_template': 'input.html'},
