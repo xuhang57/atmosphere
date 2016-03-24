@@ -15,6 +15,7 @@ class GroupSerializer(serializers.HyperlinkedModelSerializer):
         fields = (
             'id',
             'url',
+            'uuid',
             'name',
             'users',
         )

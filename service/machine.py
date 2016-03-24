@@ -228,104 +228,201 @@ def upload_privacy_data(machine_request, new_machine):
     return sync_machine_membership(accounts, img, new_machine, tenant_list)
 
 
-def add_membership(image_version, group):
+def add_image_membership(image, group):
     """
-    This function will add *all* users in the group
-    to *all* providers/machines using this image_version
-    O(N^2)
+    Share with *group* to all current, active provider machines
+    inside an Application -> ApplicationVersion
     """
-    for provider_machine in image_version.machines.filter(only_current_source()):
-        prov = provider_machine.instance_source.provider
-        accounts = get_account_driver(prov)
-        if not accounts:
-            raise NotImplemented("Account Driver could not be created for %s" % prov)
-        accounts.clear_cache()
-        admin_driver = accounts.admin_driver  # cache has been cleared
-        if not admin_driver:
-            raise NotImplemented("Admin Driver could not be created for %s" % prov)
-        img = accounts.get_image(provider_machine.identifier)
-        projects = get_current_projects_for_image(accounts, img.id)
-        for identity_membership in group.identitymembership_set.all():
-            if identity_membership.identity.provider != prov:
-                continue
-            # Get project name from the identity's credential-list
-            project_name = identity_membership.identity.get_credential('ex_project_name')
-            project = accounts.get_project(project_name)
-            if project and project in projects:
-                continue
-            # Share with the *database* first!
-            obj, created = models.ApplicationMembership.objects.get_or_create(
-                group=group,
-                application=provider_machine.application)
-            if created:
-                print "Created new ApplicationMembership: %s" \
-                    % (obj,)
-            obj, created = models.ApplicationVersionMembership.objects.get_or_create(
-                group=group,
-                image_version=provider_machine.application_version)
-            if created:
-                print "Created new ApplicationVersionMembership: %s" \
-                    % (obj,)
-            obj, created = models.ProviderMachineMembership.objects.get_or_create(
-                group=group,
-                provider_machine=provider_machine)
-            if created:
-                print "Created new ProviderMachineMembership: %s" \
-                    % (obj,)
-            # Share with the *cloud* last!
-            accounts.image_manager.share_image(img, project_name)
-            accounts.accept_shared_image(img, project_name)
-            logger.info("Added Cloud Access: %s-%s"
-                        % (img, project_name))
-            continue
+    share_application(image, group)
+    # Add db values after we have cloud approval
+    db_add_image_membership(image, group)
+    for image_version in image.versions.all():
+        add_version_membership(image_version, group)
+        for prov_machine in image_version.machines.filter(only_current_source()):
+            add_machine_membership(prov_machine, group)
 
 
-def remove_membership(image_version, group):
+def db_add_image_membership(application, group):
+    app_membership, created= models.ApplicationMembership.objects.get_or_create(
+        group=group,
+        application=application)
+    if created:
+        logger.info("Removed ApplicationMembership: %s-%s"
+                    % (application, group))
+    return
+def add_version_membership(image_version, group):
+    obj, created = models.ApplicationVersionMembership.objects.get_or_create(
+        group=group,
+        image_version=image_version)
+    if created:
+        logger.info("Created new ApplicationVersionMembership: %s"
+            % (obj,))
+    return
+
+def add_machine_membership(provider_machine, group):
+    obj, created = models.ProviderMachineMembership.objects.get_or_create(
+        group=group,
+        provider_machine=provider_machine)
+    if created:
+        logger.info("Created new ProviderMachineMembership: %s"
+            % (obj,))
+    return
+
+
+def share_application(application, group):
+    for image_version in application.versions.all():
+        share_machines(image_version, group)
+    return
+
+
+def share_machines(image_version, group):
     """
     This function will remove *all* users in the group
     to *all* providers/machines using this image_version
     """
     for provider_machine in image_version.machines.filter(only_current_source()):
-        prov = provider_machine.instance_source.provider
-        accounts = get_account_driver(prov)
-        if not accounts:
-            raise NotImplemented("Account Driver could not be created for %s" % prov)
-        accounts.clear_cache()
-        admin_driver = accounts.admin_driver  # cache has been cleared
-        if not admin_driver:
-            raise NotImplemented("Admin Driver could not be created for %s" % prov)
-        img = accounts.get_image(provider_machine.identifier)
-        projects = get_current_projects_for_image(accounts, img.id)
-        for identity_membership in group.identitymembership_set.all():
-            if identity_membership.identity.provider != prov:
-                continue
-            # Get project name from the identity's credential-list
-            project_name = identity_membership.identity.get_credential(
-                    'ex_project_name')
-            project = accounts.get_project(project_name)
-            if project and project not in projects:
-                continue
-            # Perform a *DATABASE* remove first.
-            models.ApplicationMembership.objects.filter(
-                group=group,
-                application=provider_machine.application).delete()
-            logger.info("Removed ApplicationMembership: %s-%s"
-                        % (provider_machine.application, group))
-            models.ApplicationVersionMembership.objects.filter(
-                group=group,
-                application_version=provider_machine.application_version).delete()
-            logger.info("Removed ApplicationVersionMembership: %s-%s"
-                        % (provider_machine.application_version, group))
-            models.ProviderMachineMembership.objects.filter(
-                group=group,
-                provider_machine=provider_machine).delete()
-            logger.info("Removed ProviderMachineMembership: %s-%s"
-                        % (provider_machine, group))
-            # Perform a *CLOUD* remove last.
-            accounts.image_manager.unshare_image(img, project_name)
-            logger.info("Removed Cloud Access: %s-%s"
-                        % (img, project_name))
+        share_machine(provider_machine, group)
     return
+
+
+def share_machine(provider_machine, group):
+    # Collect necessary 'DB resources'
+    prov = provider_machine.instance_source.provider
+    active_identity_memberships = group.identitymembership_set.filter(
+        identity__provider=prov)
+    # Use DB resources to collect necessary 'cloud resources'
+    accounts = get_account_driver(prov)
+    if not accounts:
+        raise NotImplemented("Account Driver could not be created for %s" % prov)
+    accounts.clear_cache()
+    admin_driver = accounts.admin_driver  # cache has been cleared
+    if not admin_driver:
+        raise NotImplemented("Admin Driver could not be created for %s" % prov)
+    img = accounts.get_image(provider_machine.identifier)
+    projects = get_current_projects_for_image(accounts, img.id)
+    # Cycle through identity_memberships for group you wish to share
+    for identity_membership in active_identity_memberships:
+        #NOTE: We are giving *ALL* identities that a group
+        # is a member of access, one project at a time.
+        project_name = identity_membership.identity.get_credential('ex_project_name')
+        if not project_name:
+            project_name = identity_membership.identity.get_credential('ex_tenant_name')
+        project = accounts.get_project(project_name)
+        if not project:
+            logger.debug("Project %s does not exist!" % project_name)
+            return
+        if project in projects:
+            logger.debug("Image %s already shared with %s" % (img, project_name))
+        # Perform a *CLOUD* add operation
+        accounts.image_manager.share_image(img, project_name)
+        logger.info("Added Cloud Access: %s-%s"
+                    % (img, project_name))
+    return
+
+
+def delete_image_membership(application, group):
+    app_membership = models.ApplicationMembership.objects.filter(
+        group=group,
+        application=application)
+    if app_membership:
+        app_membership.delete()
+        logger.info("Removed ApplicationMembership: %s-%s"
+                    % (application, group))
+    return
+
+def remove_image_membership(image, group):
+    """
+    This composite function removes *all* cloud projects from all images
+    associated with the image.
+    Additionally, DB Membership will be removed from all providers/machines
+    using this image
+    """
+    # If cloud action fails, DB will still hold true.
+    unshare_application(image, group)
+    # Delete DB when cloud successfully removes values
+    delete_image_membership(image, group)
+    for image_version in image.versions.all():
+            # Perform a *DATABASE* remove first.
+        remove_version_membership(image_version, group)
+        remove_machine_memberships(image_version, group)
+    return
+
+
+def remove_version_membership(image_version, group):
+    """
+    This function will remove *all* users in the group
+    to *all* providers/machines using this image_version
+    """
+    version_membership = models.ApplicationVersionMembership.objects.filter(
+        group=group,
+        image_version=image_version)
+    if version_membership:
+        version_membership.delete()
+        logger.info("Removed ApplicationVersionMembership: %s-%s"
+                    % (image_version, group))
+    return
+
+
+def remove_machine_memberships(image_version, group):
+    machine_membership = models.ProviderMachineMembership.objects.filter(
+        group=group,
+        provider_machine__application_version=image_version)
+    if machine_membership:
+        count = machine_membership.count()
+        machine_membership.delete()
+        logger.info("Removed %s ProviderMachineMemberships for Version:%s Group:%s"
+                    % (count, image_version, group))
+    return
+
+
+def unshare_application(application, group):
+    for image_version in application.versions.all():
+        unshare_machines(image_version, group)
+    return
+
+
+def unshare_machines(image_version, group):
+    """
+    This function will remove *all* users in the group
+    to *all* providers/machines using this image_version
+    """
+    for provider_machine in image_version.machines.filter(only_current_source()):
+        unshare_machine(provider_machine, group)
+    return
+
+
+def unshare_machine(provider_machine, group):
+    # Collect necessary 'DB resources'
+    prov = provider_machine.instance_source.provider
+    active_identity_memberships = group.identitymembership_set.filter(
+        identity__provider=prov)
+    # Use DB resources to collect necessary 'cloud resources'
+    accounts = get_account_driver(prov)
+    if not accounts:
+        raise NotImplemented("Account Driver could not be created for %s" % prov)
+    accounts.clear_cache()
+    admin_driver = accounts.admin_driver  # cache has been cleared
+    if not admin_driver:
+        raise NotImplemented("Admin Driver could not be created for %s" % prov)
+    img = accounts.get_image(provider_machine.identifier)
+    projects = get_current_projects_for_image(accounts, img.id)
+    # Cycle through identity_memberships for group you wish to share
+    for identity_membership in active_identity_memberships:
+        #NOTE: We are giving *ALL* identities that a group
+        # is a member of access, one project at a time.
+        project_name = identity_membership.identity.get_credential('ex_project_name')
+        if not project_name:
+            project_name = identity_membership.identity.get_credential('ex_tenant_name')
+        project = accounts.get_project(project_name)
+        if not project or project not in projects:
+            logger.debug("Project %s has already been removed" % project)
+            return
+        # Perform a *CLOUD* remove operation
+        accounts.image_manager.unshare_image(img, project_name)
+        logger.info("Removed Cloud Access: %s-%s"
+                    % (img, project_name))
+    return
+
 
 def sync_machine_membership(accounts, glance_image, new_machine, tenant_list):
     """
@@ -359,20 +456,9 @@ def get_current_projects_for_image(accounts, image_id):
     projects = [accounts.get_project_by_id(member.member_id)
                 for member in shared_with]
     return projects
-  
-
-def get_current_projects_for_image(accounts, image_id):
-    projects = []
-    shared_with = accounts.image_manager.shared_images_for(
-        image_id=image_id)
-    projects = [accounts.get_project_by_id(member.member_id)
-                for member in shared_with]
-    return projects
 
 
 def sync_cloud_access(accounts, img, names=None):
-    shared_with = accounts.image_manager.shared_images_for(
-        image_id=img.id)
     # Find tenants who are marked as 'sharing' on openstack but not on DB
     # Or just in One-line..
     projects = get_current_projects_for_image(accounts, img.id)
@@ -411,16 +497,4 @@ def make_private(image_manager, image, provider_machine, tenant_list=[]):
         except models.Group.DoesNotExist:
             logger.warn("Group %s does not exist - Skipped sharing" % name)
             pass
-
-        obj, created = models.ApplicationMembership.objects.get_or_create(
-            group=group,
-            application=provider_machine.application)
-        if created:
-            print "Created new ApplicationMembership: %s" \
-                % (obj,)
-        obj, created = models.ProviderMachineMembership.objects.get_or_create(
-            group=group,
-            provider_machine=provider_machine)
-        if created:
-            print "Created new ProviderMachineMembership: %s" \
-                % (obj,)
+        db_add_image_membership(provider_machine.application, group)

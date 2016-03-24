@@ -156,7 +156,7 @@ class InstanceViewSet(MultipleFieldLookup, AuthViewSet):
                     'request': self.request},
                 data={}, partial=True)
             if not serialized_instance.is_valid():
-                return Response(serialized_instance.data,
+                return Response(serialized_instance.errors,
                                 status=status.HTTP_400_BAD_REQUEST)
             return Response(status=status.HTTP_204_NO_CONTENT)
         except VolumeAttachConflict as exc:

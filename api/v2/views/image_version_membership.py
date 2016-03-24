@@ -2,7 +2,7 @@ from django.db.models import Q
 import django_filters
 
 from core.models import ApplicationVersionMembership as ImageVersionMembership
-from service.machine import add_membership, remove_membership
+from service.machine import add_version_membership, remove_version_membership
 from api.v2.serializers.details import ImageVersionMembershipSerializer
 from api.v2.views.base import AuthViewSet
 from api.v2.views.mixins import MultipleFieldLookup
@@ -42,12 +42,12 @@ class ImageVersionMembershipViewSet(AuthViewSet):
             image_version__created_by=self.request.user)
 
     def perform_destroy(self, instance):
-        remove_membership(instance.image_version, instance.group)
+        remove_version_membership(instance.image_version, instance.group)
         instance.delete()
 
     def perform_create(self, serializer):
         image_version = serializer.validated_data['image_version']
         group = serializer.validated_data['group']
-        add_membership(image_version, group)
+        add_version_membership(image_version, group)
         serializer.save()
 

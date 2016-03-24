@@ -15,15 +15,14 @@ class ImageMembershipSerializer(serializers.HyperlinkedModelSerializer):
         source='application',
         queryset=Image.objects.all(),
         serializer_class=ImageSummarySerializer,
-        style={'base_template': 'input.html'},
-        required=False)
+        lookup_field='uuid',
+        style={'base_template': 'input.html'})
     #NOTE: When complete, return here to disambiguate between 'membership'&&'group'
     group = ModelRelatedField(
         queryset=Membership.objects.all(),
         serializer_class=GroupSummarySerializer,
-        style={'base_template': 'input.html'},
         lookup_field='uuid',
-        required=False)
+        style={'base_template': 'input.html'})
     url = serializers.HyperlinkedIdentityField(
         view_name='api:v2:image_membership-detail',
     )
@@ -33,7 +32,7 @@ class ImageMembershipSerializer(serializers.HyperlinkedModelSerializer):
         validators = [
             UniqueTogetherValidator(
                 queryset=ImageMembership.objects.all(),
-                fields=('image', 'group')
+                fields=('application', 'group')
             )
         ]
         fields = (
