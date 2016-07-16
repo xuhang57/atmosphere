@@ -9,10 +9,10 @@ from djcelery.app import app
 
 from threepio import logger, status_logger
 
+from rtwo.driver import OSDriver
 from rtwo.models.provider import AWSProvider, AWSUSEastProvider,\
     AWSUSWestProvider, EucaProvider,\
     OSProvider, OSValhallaProvider
-from rtwo.models.driver import OSDriver
 from rtwo.models.machine import Machine
 from rtwo.models.size import MockSize
 from rtwo.models.volume import Volume
