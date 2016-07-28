@@ -3,10 +3,10 @@
 This script serves a very specific purpose:
     Nullifying all non-end-dated status history objects that are not the latest value.
 """
-
-from core.models import Provider, Instance, InstanceStatusHistory
 import django
 django.setup()
+from core.models import Provider, Instance, InstanceStatusHistory
+
 provs = Provider.get_active()
 for instance in Instance.objects.filter(
         source__provider__in=provs).order_by('created_by'):
