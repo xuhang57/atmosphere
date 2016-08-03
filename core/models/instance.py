@@ -61,7 +61,8 @@ class Instance(models.Model):
     # FIXME  Problems when setting a default, missing auto_now_add
     start_date = models.DateTimeField()
     end_date = models.DateTimeField(null=True, blank=True)
-
+    # Jetstream plugin -- for now
+    allocation_source = models.ForeignKey("AllocationSource")
     # Model Managers
     objects = models.Manager()  # The default manager.
     active_instances = ActiveInstancesManager()
