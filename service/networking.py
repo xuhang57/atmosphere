@@ -148,6 +148,7 @@ class GenericNetworkTopology(object):
             self, network_id, username,
             ip_version=4,
             dns_nameservers=[],
+            subnet_pool_id=None,
             get_unique_number=_get_unique_id,
             get_cidr=get_default_subnet):
         """
@@ -162,6 +163,9 @@ class GenericNetworkTopology(object):
         inc = 0
         MAX_SUBNET = 4064
         new_cidr = None
+        if subnet_pool_id:
+            return network_driver.create_subnet(neutron, subnet_name,
+                                                network_id, ip_version, subnet_pool_id)
         while not success and inc < MAX_SUBNET:
             try:
                 new_cidr = get_cidr(username, inc, get_unique_number)
@@ -289,6 +293,7 @@ class ExternalNetwork(GenericNetworkTopology):
         network = self.get_or_create_network()  #NOTE: This also might be wrong.
         subnet = self.get_or_create_user_subnet(
             network['id'], username,
+            subnet_pool_id=settings.DEFAULT_SUBNET_POOL_ID,
             dns_nameservers=dns_nameservers)
         router = self.get_or_create_router()
         gateway = self.get_or_create_router_gateway(router, network)
@@ -344,6 +349,7 @@ class ExternalRouter(GenericNetworkTopology):
         network = self.get_or_create_network()
         subnet = self.get_or_create_user_subnet(
             network['id'], username,
+            subnet_pool_id=settings.DEFAULT_SUBNET_POOL_ID,
             dns_nameservers=dns_nameservers)
         router = self.get_or_create_router()
         gateway = self.get_or_create_router_gateway(router, network)

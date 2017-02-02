@@ -198,6 +198,7 @@ AUTH_SERVER_URL = SERVER_URL + REDIRECT_URL + '/auth'
 DEPLOY_SERVER_URL = SERVER_URL.replace("https", "http")
 
 # These DEFAULT variables can be overridden per provider..
+DEFAULT_SUBNET_POOL_ID = None
 DEFAULT_NAMESERVERS = ['8.8.8.8','8.8.4.4.']
 DEFAULT_RULES = [
     ("ICMP", -1, -1),
