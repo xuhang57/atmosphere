@@ -230,12 +230,12 @@ def suspend_instance(esh_driver, esh_instance,
 
 
 # Networking specific
-def remove_ips(esh_driver, esh_instance, identity_uuid, update_meta=True):
+def remove_ips(esh_driver, esh_instance, core_identity_uuid, update_meta=True):
     """
     Returns: (floating_removed, fixed_removed)
     """
     from service.tasks.driver import update_metadata
-    core_identity = Identity.objects.get(uuid=core_identity_uuid)
+    core_identity = CoreIdentity.objects.get(uuid=core_identity_uuid)
     network_driver = _to_network_driver(core_identity)
     result = network_driver.disassociate_floating_ip(esh_instance.id)
     logger.info("Removed Floating IP for Instance %s - Result:%s"
@@ -1423,6 +1423,7 @@ def admin_keypair_init(core_identity):
 
 
 def network_init(core_identity):
+    #TODO: re-add admin_network_init
     return user_network_init(core_identity)
 
 
@@ -1457,6 +1458,7 @@ def user_network_init(core_identity):
         username = core_identity.created_by.username
     esh_driver = get_cached_driver(identity=core_identity)
     dns_nameservers = core_identity.provider.get_config('network', 'dns_nameservers', [])
+    subnet_pool_name = core_identity.provider.get_config('network', 'subnet_pool_name', None)
     topology_name = core_identity.provider.get_config('network', 'topology', None)
     if not topology_name:
         logger.error(
@@ -1468,7 +1470,7 @@ def user_network_init(core_identity):
     network_strategy = initialize_user_network_strategy(
         topology_name, core_identity, network_driver, user_neutron)
     network_resources = network_strategy.create(
-        username=username, dns_nameservers=dns_nameservers)
+        username=username, dns_nameservers=dns_nameservers, subnet_pool_name=subnet_pool_name)
     network_strategy.post_create_hook(network_resources)
     logger.info("Created user network - %s" % network_resources)
     network, subnet = network_resources['network'], network_resources['subnet']

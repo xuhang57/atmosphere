@@ -547,11 +547,12 @@ class AccountDriver(BaseAccountDriver):
         return network_strategy
 
     def dns_nameservers_for(self, identity):
-        dns_nameservers = [
+        dns_nameservers = core_identity.provider.get_config('network', 'dns_nameservers', [])
+        db_dns_nameservers = [
             dns_server.ip_address for dns_server
             in identity.provider.dns_server_ips.order_by('order')
         ]
-        return dns_nameservers
+        return [set(db_dns_nameservers + dns_nameservers)]
 
     def delete_user_network(self, identity, options={}):
         """
@@ -626,6 +627,7 @@ class AccountDriver(BaseAccountDriver):
         prefix_name = "%s" % (identity_creds["tenant_name"],)
         neutron = self.get_openstack_client(identity, 'neutron')
         dns_nameservers = self.dns_nameservers_for(identity)
+        subnet_pool_name = self.get_config('network', 'subnet_pool_name', None)
         topology_name = self.get_config('network', 'topology', None)
         if not topology_name:
             logger.error(
@@ -634,7 +636,9 @@ class AccountDriver(BaseAccountDriver):
         network_strategy = self.initialize_network_strategy(
             topology_name, identity, self.network_manager, neutron)
         network_resources = network_strategy.create(
-            username=username, dns_nameservers=dns_nameservers)
+            username=username,
+            dns_nameservers=dns_nameservers,
+            subnet_pool_name=subnet_pool_name)
         network_strategy.post_create_hook(network_resources)
         return network_resources
 
