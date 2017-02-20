@@ -1,5 +1,6 @@
 import os.path
 import time
+import json
 import uuid
 
 from django.core.exceptions import ValidationError
@@ -12,8 +13,9 @@ from threepio import logger, status_logger
 from rtwo.models.provider import AWSProvider, AWSUSEastProvider,\
     AWSUSWestProvider, EucaProvider,\
     OSProvider, OSValhallaProvider
+from rtwo.exceptions import LibcloudBadResponseError
 from rtwo.driver import OSDriver
-from rtwo.drivers.common import _connect_to_keystone_v3, _token_to_keystone_scoped_project
+from rtwo.drivers.common import _connect_to_keystone_v2, _connect_to_keystone_v3, _token_to_keystone_scoped_project
 from rtwo.drivers.openstack_network import NetworkManager
 from rtwo.models.machine import Machine
 from rtwo.models.size import MockSize
@@ -44,7 +46,7 @@ from service.exceptions import (
     OverAllocationError, OverQuotaError, SizeNotAvailable,
     HypervisorCapacityError, SecurityGroupNotCreated,
     VolumeAttachConflict, VolumeDetachConflict, UnderThresholdError, ActionNotAllowed,
-    socket_error, ConnectionFailure, InstanceDoesNotExist, LibcloudInvalidCredsError,
+    socket_error, ConnectionFailure, InstanceDoesNotExist, InstanceLaunchConflict, LibcloudInvalidCredsError,
     Unauthorized)
 
 from service.accounts.openstack_manager import AccountDriver as OSAccountDriver
@@ -717,8 +719,8 @@ def os_cleanup_networking(core_identity_uuid):
         clean_task = clean_empty_ips.si(driverCls, provider, identity,
                                         immutable=True, countdown=5)
         remove_task = remove_empty_network.si(
-            driverCls, provider, identity, core_identity_uuid, {"skip_network":False},
-            immutable=True, countdown=60)
+            driverCls, provider, identity, core_identity_uuid, {"skip_network":False}
+        )
         clean_task.link(remove_task)
         clean_task.apply_async()
     else:
@@ -864,12 +866,12 @@ def launch_instance(user, identity_uuid,
          size_alias,
          "Request Received"))
     identity = CoreIdentity.objects.get(uuid=identity_uuid)
-    provider_uuid = identity.provider.uuid
+    provider = identity.provider
 
     esh_driver = get_cached_driver(identity=identity)
 
-    # May raise Unauthorized/ConnectionFailure/SizeNotAvailable
-    size = check_size(esh_driver, size_alias, provider_uuid)
+    # May raise Exception("Size not available")
+    size = check_size(esh_driver, size_alias, provider)
     # May raise Exception("Volume/Machine not available")
     boot_source = get_boot_source(user.username, identity_uuid, source_alias)
 
@@ -1183,18 +1185,40 @@ def generate_uuid4():
 ################################
 
 
-def check_size(esh_driver, size_alias, provider_uuid):
+def check_size(esh_driver, size_alias, provider):
     try:
         esh_size = esh_driver.get_size(size_alias)
-        if not convert_esh_size(esh_size, provider_uuid).active():
+        if not convert_esh_size(esh_size, provider.uuid).active():
             raise SizeNotAvailable()
         return esh_size
+    except LibcloudBadResponseError as bad_response:
+        return _parse_libcloud_error(provider, bad_response)
     except LibcloudHTTPError as http_err:
         if http_err.code == 401:
             raise Unauthorized(http_err.message)
         raise ConnectionFailure(http_err.message)
-    except:
-        raise SizeNotAvailable()
+    except Exception as exc:
+        raise
+
+
+def _parse_libcloud_error(provider, bad_response):
+    """
+    Parse a libcloud error to determine why calls failed (In this case, provider-specific errors).
+    """
+    msg = bad_response.body
+    human_error = "Invalid response received from Provider: %s" % provider.location
+    if "body: " in msg:
+        raw_json = msg.split("body: ")[1]
+        json_data = json.loads(raw_json)
+        if "error" in json_data:
+            json_data = json_data["error"]
+        if "title" in json_data:
+            human_error = json_data["title"]
+        elif "message" in json_data:
+            human_error = json_data["message"]
+        else:
+            human_error = json_data
+    raise InstanceLaunchConflict("Provider %s returned unexpected error: %s" % (provider.location, human_error))
 
 
 def get_boot_source(username, identity_uuid, source_identifier):
@@ -1423,7 +1447,9 @@ def admin_keypair_init(core_identity):
 
 
 def network_init(core_identity):
-    #TODO: re-add admin_network_init
+    topology_name = core_identity.provider.get_config('network', 'topology', 'External Router Topology')
+    if not topology_name or topology_name == "External Router Topology":
+        return admin_network_init(core_identity)  # NOTE: This flow *ONLY* works with external router.
     return user_network_init(core_identity)
 
 
@@ -1434,7 +1460,14 @@ def _to_network_driver(core_identity):
     auth_url = all_creds.get('auth_url')
     if '/v' not in auth_url:  # Add /v3 if no version specified in auth_url
         auth_url += '/v3'
-    if 'ex_force_auth_token' in all_creds:
+    if '/v2' in auth_url:  # Remove this when "Legacy cloud" support is removed
+        username = all_creds['key']
+        password = all_creds['secret']
+        auth_url = auth_url.replace("/tokens","")
+        (auth, sess, token) = _connect_to_keystone_v2(
+            auth_url, username, password,
+            project_name)
+    elif 'ex_force_auth_token' in all_creds:
         auth_token = all_creds['ex_force_auth_token']
         (auth, sess, token) = _token_to_keystone_scoped_project(
             auth_url, auth_token,
@@ -1456,7 +1489,6 @@ def user_network_init(core_identity):
     username = core_identity.get_credential('key')
     if not username:
         username = core_identity.created_by.username
-    esh_driver = get_cached_driver(identity=core_identity)
     dns_nameservers = core_identity.provider.get_config('network', 'dns_nameservers', [])
     subnet_pool_name = core_identity.provider.get_config('network', 'subnet_pool_name', None)
     topology_name = core_identity.provider.get_config('network', 'topology', None)
@@ -1472,10 +1504,7 @@ def user_network_init(core_identity):
     network_resources = network_strategy.create(
         username=username, dns_nameservers=dns_nameservers, subnet_pool_name=subnet_pool_name)
     network_strategy.post_create_hook(network_resources)
-    logger.info("Created user network - %s" % network_resources)
-    network, subnet = network_resources['network'], network_resources['subnet']
-    lc_network = _to_lc_network(esh_driver, network, subnet)
-    return lc_network
+    return network_resources
 
 
 def initialize_user_network_strategy(topology_name, identity, network_driver, neutron):
@@ -1512,6 +1541,7 @@ def admin_destroy_network(core_identity, options):
     os_acct_driver = get_account_driver(core_identity.provider)
     return os_acct_driver.delete_user_network(
         core_identity, options)
+
 
 def user_destroy_network(core_identity, options):
     topology_name = core_identity.provider.get_config('network', 'topology', None)

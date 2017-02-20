@@ -14,7 +14,7 @@ from celery.decorators import task
 from celery.task import current
 from celery.result import allow_join_result
 
-from rtwo.exceptions import LibcloudDeploymentError
+from rtwo.exceptions import LibcloudDeploymentError, LibcloudInvalidCredsError, LibcloudBadResponseError
 
 #TODO: Internalize exception into RTwo
 from rtwo.exceptions import NonZeroDeploymentException, NeutronBadRequest
@@ -94,6 +94,7 @@ def wait_for_instance(
         identity,
         status_query,
         tasks_allowed=False,
+        test_tmp_status=False,
         return_id=False,
         **task_kwargs):
     """
@@ -105,16 +106,13 @@ def wait_for_instance(
     """
     try:
         celery_logger.debug("wait_for task started at %s." % datetime.now())
-        if app.conf.CELERY_ALWAYS_EAGER:
-            celery_logger.debug("Eager task - DO NOT return until its ready!")
-            return _eager_override(wait_for_instance, _is_instance_ready,
-                                   (driverCls, provider, identity,
-                                    instance_alias, status_query,
-                                    tasks_allowed, return_id), {})
-
-        result = _is_instance_ready(driverCls, provider, identity,
-                                    instance_alias, status_query,
-                                    tasks_allowed, return_id)
+        driver = get_driver(driverCls, provider, identity)
+        instance = driver.get_instance(instance_alias)
+        if not instance:
+            celery_logger.debug("Instance has been terminated: %s." % instance_alias)
+            return False
+        result = _is_instance_ready(instance, status_query,
+                                    tasks_allowed, test_tmp_status, return_id)
         return result
     except Exception as exc:
         if "Not Ready" not in str(exc):
@@ -139,26 +137,31 @@ def _eager_override(task_class, run_method, args, kwargs):
     return None
 
 
-def _is_instance_ready(driverCls, provider, identity,
-                       instance_alias, status_query,
-                       tasks_allowed=False, return_id=False):
+def _is_instance_ready(instance, status_query,
+                       tasks_allowed=False, test_tmp_status=False, return_id=False):
     # TODO: Refactor so that terminal states can be found. IE if waiting for
     # 'active' and in status: Suspended - none - GIVE up!!
-    driver = get_driver(driverCls, provider, identity)
-    instance = driver.get_instance(instance_alias)
-    if not instance:
-        celery_logger.debug("Instance has been terminated: %s." % instance_alias)
-        if return_id:
-            return None
-        return False
     i_status = instance._node.extra['status'].lower()
-    i_task = instance._node.extra['task']
-    if (i_status not in status_query) or (i_task and not tasks_allowed):
+    i_task = instance._node.extra.get('task',None)
+    i_tmp_status = instance._node.extra.get('metadata', {}).get('tmp_status', '')
+    celery_logger.debug(
+        "Instance %s: Status: (%s - %s) Tmp status: %s "
+        % (instance.id, i_status, i_task, i_tmp_status))
+    status_not_ready = (i_status not in status_query)  # Ex: status 'build' is not in 'active'
+    tasks_not_ready = (not tasks_allowed and i_task is not None)  # Ex: Task name: 'scheudling', tasks_allowed=False
+    tmp_status_not_ready = (test_tmp_status and i_tmp_status != "")  # Ex: tmp_status: 'initializing'
+    celery_logger.debug(
+            "Status not ready: %s tasks not ready: %s Tmp status_not_ready: %s"
+            % (status_not_ready, tasks_not_ready, tmp_status_not_ready))
+    if status_not_ready or tasks_not_ready or tmp_status_not_ready:
         raise Exception(
-            "Instance: %s: Status: (%s - %s) - Not Ready"
-            % (instance.id, i_status, i_task))
-    celery_logger.debug("Instance %s: Status: (%s - %s) - Ready"
-                 % (instance.id, i_status, i_task))
+            "Instance: %s: Status: (%s - %s - %s) Produced:"
+            "Status not ready: %s tasks not ready: %s Tmp status_not_ready: %s"
+            % (instance.id, i_status, i_task, i_tmp_status,
+               status_not_ready, tasks_not_ready, tmp_status_not_ready))
+    celery_logger.debug(
+            "Instance %s: Status: (%s - %s - %s) - Ready"
+            % (instance.id, i_status, i_task, i_tmp_status))
     if return_id:
         return instance.id
     return True
@@ -246,9 +249,13 @@ def _remove_network(
 
 
 @task(name="clear_empty_ips_for")
-def clear_empty_ips_for(core_identity_uuid, username=None):
+def clear_empty_ips_for(username, core_provider_id, core_identity_uuid):
     """
     RETURN: (number_ips_removed, delete_network_called)
+    on Failure:
+    -404, driver creation failure (Verify credentials are accurate)
+    -401, authorization failure (Change the password of the driver)
+    -500, cloud failure (Operational support required)
     """
     from service.driver import get_esh_driver
     from service import instance as instance_service
@@ -257,7 +264,7 @@ def clear_empty_ips_for(core_identity_uuid, username=None):
     core_identity = Identity.objects.get(uuid=core_identity_uuid)
     driver = get_esh_driver(core_identity)
     if not isinstance(driver, OSDriver):
-        return (0, False)
+        return (-404, False)
     # Get useful info
     creds = core_identity.get_credentials()
     tenant_name = creds['ex_tenant_name']
@@ -265,7 +272,14 @@ def clear_empty_ips_for(core_identity_uuid, username=None):
     # Attempt to clean floating IPs
     num_ips_removed = _remove_extra_floating_ips(driver, tenant_name)
     # Test for active/inactive_instances instances
-    instances = driver.list_instances()
+    try:
+        instances = driver.list_instances()
+    except LibcloudInvalidCredsError:
+        logger.exception("InvalidCredentials provided for Identity %s" % core_identity)
+        return (-401, False)
+    except LibcloudBadResponseError:
+        logger.exception("Driver returned unexpected response for Identity %s" % core_identity)
+        return (-500, False)
     # Active True IFF ANY instance is 'active'
     active_instances = any(driver._is_active_instance(inst)
                            for inst in instances)
@@ -306,8 +320,7 @@ def clear_empty_ips():
     for core_identity in identities:
         try:
             # TODO: Add some
-            clear_empty_ips_for.apply_async(args=[core_identity.uuid,
-                                                  core_identity.created_by])
+            clear_empty_ips_for.apply_async(args=[core_identity.created_by.username,core_identity.provider.id, str(core_identity.uuid)])
         except Exception as exc:
             celery_logger.exception(exc)
     celery_logger.debug("clear_empty_ips task finished at %s." % datetime.now())
