@@ -80,6 +80,8 @@ router.register(r'renewal_strategy',views.RenewalStrategyViewSet, base_name='ren
 router.register(r'resource_requests', views.ResourceRequestViewSet)
 router.register(r'reporting', views.ReportingViewSet, base_name='reporting')
 router.register(r'sizes', views.SizeViewSet)
+router.register(r'sahara_cluster', views.ClusterViewSet, base_name='cluster')
+router.register(r'sahara_job', views.JobViewSet, base_name='job')
 router.register(r'status_types', views.StatusTypeViewSet)
 router.register(r'tags', views.TagViewSet)
 router.register(r'token_update', views.TokenUpdateViewSet, base_name='token_update')
