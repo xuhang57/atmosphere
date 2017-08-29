@@ -1,11 +1,14 @@
 """
 Driver factory (non-standard mock but useful for testing)
 """
+import collections
+import copy
 import uuid
 
 from threepio import logger
 
 from rtwo.models.instance import Instance
+from rtwo.models.size import MockSize
 from rtwo.driver import MockDriver
 from rtwo.drivers.openstack_network import NetworkManager
 from rtwo.drivers.common import _connect_to_keystone_v3, _token_to_keystone_scoped_project
@@ -193,15 +196,18 @@ class AtmosphereMockNetworkManager(NetworkManager):
 
 
 class MockInstance(Instance):
-    def __init__(self, id=None, provider=None, source=None, ip=None, extra={}, *args, **kwargs):
+    def __init__(self, id=None, provider=None, source=None, ip=None, size=None, extra={}, *args, **kwargs):
         identifier = id
         if not identifier:
             identifier = kwargs.get('uuid', uuid.uuid4())
+        if not size:
+            size = MockSize("Unknown", provider)
         if not ip:
             ip = '0.0.0.0'
         self.id = identifier
         self.alias = identifier
         self.provider = provider
+        self.size = size
         self.name = kwargs.get('name', "Mock instance %s" % identifier)
         self.source = source
         self.ip = ip
@@ -227,6 +233,11 @@ class AtmosphereMockDriver(MockDriver):
         """
         return True
 
+    def _get_size(self, alias):
+        size = MockSize("Unknown", self.providerCls() )
+        return size
+
+
     def list_all_volumes(self, *args, **kwargs):
         """
         Return the InstanceClass representation of a libcloud node
@@ -251,12 +262,14 @@ class AtmosphereMockDriver(MockDriver):
 
     def add_core_instance(self, core_instance):
         extra = {}
-        extra['metadata'] = {'iplant_suspend_fix': False}
-        return self.create_instance(
+        extra['metadata'] = {'iplant_suspend_fix': False, 'tmp_status': ''}
+        extra['status'] = core_instance.get_last_history().status.name
+        esh_instance = self.create_instance(
             id=str(core_instance.provider_alias),
             ip=core_instance.ip_address,
             name=core_instance.name,
             extra=extra)
+        return esh_instance
 
     def list_instances(self, **kwargs):
         """
@@ -325,7 +338,15 @@ class AtmosphereMockDriver(MockDriver):
         return self.all_volumes
 
     def create_volume(self, *args, **kwargs):
-        raise NotImplementedError()
+        volume_args = copy.copy(kwargs)
+        volume_args.pop('max_attempts', None)
+        volume_args['id'] = volume_args.get('id', str(uuid.uuid4()))
+        volume_args['extra'] = volume_args.get('extra', {})
+        MockESHVolume = collections.namedtuple('MockESHVolume',
+                                               ['id', 'name', 'image', 'snapshot', 'metadata', 'size', 'extra'])
+        mock_volume = MockESHVolume(**volume_args)
+        self.all_volumes.append(mock_volume)
+        return True, mock_volume
 
     def destroy_volume(self, *args, **kwargs):
         raise NotImplementedError()

@@ -1,7 +1,6 @@
 from core.models import IdentityMembership
 from rest_framework import serializers
 from api.v2.serializers.summaries import (
-    AllocationSummarySerializer,
     IdentitySummarySerializer,
     ProviderSummarySerializer,
     QuotaSummarySerializer,
@@ -11,7 +10,6 @@ from api.v2.serializers.summaries import (
 
 class IdentityMembershipSerializer(serializers.HyperlinkedModelSerializer):
     quota = QuotaSummarySerializer()
-    allocation = AllocationSummarySerializer()
     identity_key = serializers.SerializerMethodField()
     identity = IdentitySummarySerializer()
     user = UserSummarySerializer(source='identity.created_by')
@@ -21,14 +19,13 @@ class IdentityMembershipSerializer(serializers.HyperlinkedModelSerializer):
     )
 
     def get_identity_key(self, identity_membership):
-        return identity_membership.identity.get_credential('key')
+        return identity_membership.identity.get_key()
 
     class Meta:
         model = IdentityMembership
         fields = ('id',
                   'url',
                   'quota',
-                  'allocation',
                   'end_date',
                   'provider',
                   'identity',

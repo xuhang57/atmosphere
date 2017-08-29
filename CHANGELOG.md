@@ -1,3 +1,49 @@
+## [Ancient-Asteroid(v27)](https://github.com/cyverse/atmosphere/milestone/14?closed=1) (as of 8/10/2017)
+Improvements:
+- Ansible will now deploy user-boot-scripts
+
+Bugfixes:
+- Fix broken emulation endpoint
+- Fixed a race-condition that would cause failures inside django-cyverse-auth
+- Cleanup formatting and variable definitions in project sharing feature
+- /v1/project_serializer includes previously-missing value 'created_by'
+- Remove unnecessary check for permissions on volume POST
+- Fix small edge-case where InstanceSource exists, but volume does not
+- Fix broken test-cases
+- Remove duplicated import
+
+Internal:
+- Squash migrations 0001-0084
+- Remove unused v2 Event API
+- Updated regression test-cases
+
+Deprecated:
+  - /api/v2/allocations has been removed
+  - identity.allocation, and quota.allocation have been removed
+
+## [Zesty-Zapdos](https://github.com/cyverse/atmosphere/milestone/13?closed=1) (as of 7/17/2017)
+
+Improvements:
+ - Disable instance sizes if the hosting image has a disk size thats larger than what is allowed.
+   - Update the size attribute during monitoring of images
+ - Releasing a new SSH client and VNC client -- Guacamole
+   - Provide a simple API endpoint that allows new clients to decide on the functionality and return to Troposphere.
+
+Bugfixes:
+ - Instances end dated at the point in time when deletion occurs in the API, rather than by request.
+ - Fixed an error that caused legacy clouds to fail with "project_id" KeyError
+ - Fixed an error that caused the wrong 'type' of quota value to be set on legacy and new clouds.
+
+Internal:
+ - Invalid host headers disabled at nginx
+ - Improvements to travis.yml to help improve the QOL working on the codebase.
+ - Documentation on generating requirements in atmosphere
+ - Improve the onboarding process for new cloud providers by including sample cloud_config
+ - Prepare for Ubuntu 16.04 support with systemd scripts
+ - Include script for generating instance reporting
+ - Include script for replication of an application to a provider
+
+
 ## [Yampy-Yellowlegs](https://github.com/cyverse/atmosphere/milestone/12?closed=1) (as of 6/12/2017)
 
 Improvements:

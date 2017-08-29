@@ -3,7 +3,6 @@ from .allocation_source import AllocationSourceSerializer
 from .boot_script import BootScriptSerializer
 from .credential import CredentialSerializer
 from .email_template import EmailTemplateSerializer
-from .event import EventSerializer
 from .group import GroupSerializer
 from .help_link import HelpLinkSerializer
 from .image_version import ImageVersionSerializer
@@ -34,10 +33,12 @@ from .provider import (ProviderSerializer, ProviderTypeSerializer,
                        PlatformTypeSerializer)
 from .provider_credential import ProviderCredentialSerializer
 from .provider_machine import ProviderMachineSerializer
-from .quota import QuotaSerializer, AllocationSerializer
+from .quota import QuotaSerializer
 from .renewal_strategy import RenewalStrategySerializer
 from .resource_request import (
     ResourceRequestSerializer, UserResourceRequestSerializer)
+from .resource_request_actions import (
+    ResourceRequest_UpdateQuotaSerializer)
 from .reporting import InstanceReportingSerializer
 from .size import SizeSerializer
 from .ssh_key import SSHKeySerializer

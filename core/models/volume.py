@@ -26,6 +26,7 @@ class Volume(BaseSource):
     size = models.IntegerField()
     name = models.CharField(max_length=256)
     description = models.TextField(blank=True, null=True)
+    project = models.ForeignKey("Project", null=True, blank=True, related_name='volumes')
 
     objects = models.Manager()  # The default manager.
     active_volumes = ActiveVolumesManager()
@@ -54,11 +55,19 @@ class Volume(BaseSource):
         self.save()
         return self
 
-    def get_projects(self, user):
-        projects = self.projects.filter(
-            Q(end_date=None) | Q(end_date__gt=timezone.now()),
-            owner=user)
-        return projects
+    @staticmethod
+    def shared_with_user(user, is_leader=None):
+        """
+        is_leader: Explicitly filter out instances if `is_leader` is True/False, if None(default) do not test for project leadership.
+        """
+        ownership_query = Q(instance_source__created_by=user)
+        project_query = Q(project__owner__memberships__user=user)
+        if is_leader == False:
+            project_query &= Q(project__owner__memberships__is_leader=False)
+        elif is_leader == True:
+            project_query &= Q(project__owner__memberships__is_leader=True)
+        membership_query = Q(instance_source__created_by__memberships__group__user=user)
+        return Volume.objects.filter(membership_query | project_query | ownership_query).distinct()
 
     def __unicode__(self):
         return "%s - %s" % (self.instance_source.identifier, self.name)
@@ -126,6 +135,10 @@ class Volume(BaseSource):
         """
         return self.get_status()
 
+    def _has_history(self):
+        history_count = self.volumestatushistory_set.count()
+        return history_count > 0
+
     def _get_last_history(self):
         last_history = self.volumestatushistory_set.all()\
                                                    .order_by('-start_date')
@@ -144,8 +157,6 @@ class Volume(BaseSource):
 
     def _update_history(self):
         status = self.get_status()
-        device = self.get_device()
-        instance_alias = self.get_instance_alias()
         if status != VolumeStatus.UNKNOWN:
             last_history = self._get_last_history()
             # This is a living volume!
@@ -155,7 +166,11 @@ class Volume(BaseSource):
             if self._should_update(last_history):
                 with transaction.atomic():
                     try:
-                        new_history = VolumeStatusHistory.factory(self)
+                        start_date = None
+                        # FIXME: Handle this for jetstream/atmosphere in future release
+                        # if not self._has_history():
+                        #     start_date = self.instance_source.start_date
+                        new_history = VolumeStatusHistory.factory(self, start_date=start_date)
                         if last_history:
                             last_history.end_date = new_history.start_date
                             last_history.save()
@@ -175,9 +190,13 @@ def convert_esh_volume(esh_volume, provider_uuid, identity_uuid=None, user=None)
     name = esh_volume.name
     size = esh_volume.size
     created_on = esh_volume.extra.get('createTime')
+    description = esh_volume.extra.get('description')
     try:
         source = InstanceSource.objects.get(
             identifier=identifier, provider__uuid=provider_uuid)
+        if not source.is_volume():
+            raise InstanceSource.DoesNotExist(
+                "InstanceSource exists, but does not have associated volume")
         volume = source.volume
     except InstanceSource.DoesNotExist:
         if not identity_uuid:
@@ -190,32 +209,31 @@ def convert_esh_volume(esh_volume, provider_uuid, identity_uuid=None, user=None)
             provider_uuid,
             identity_uuid,
             user,
-            created_on)
+            description=description,
+            created_on=created_on)
     volume.esh = esh_volume
     volume._update_history()
     return volume
 
 
-def create_volume(name, identifier, size, provider_uuid, identity_uuid,
-                  creator, description=None, created_on=None):
+def create_volume(name, identifier, size,
+                  provider_uuid, identity_uuid, creator,
+                  description=None, created_on=None):
     provider = Provider.objects.get(uuid=provider_uuid)
     identity = Identity.objects.get(uuid=identity_uuid)
 
-    source = InstanceSource.objects.create(
+    defaults = {}
+    # FIXME: Handle this for jetstream/atmosphere in future release
+    # if created_on:
+    #     defaults['start_date'] = created_on
+    source, _ = InstanceSource.objects.update_or_create(
         identifier=identifier, provider=provider,
-        created_by=creator, created_by_identity=identity)
+        created_by=creator, created_by_identity=identity,
+        defaults=defaults)
 
     volume = Volume.objects.create(
         name=name, description=description, size=size, instance_source=source)
 
-    if created_on:
-        # Taking advantage of the ability to save string dates as datetime
-        # but we need to get the actual date time after we are done..
-        # NOTE: Why is this different than the method in convert_esh_instance
-        # NOTE: -Steve
-        volume.start_date = pytz.utc.localize(created_on)
-        volume.save()
-    volume = Volume.objects.get(id=volume.id)
     return volume
 
 

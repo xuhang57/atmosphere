@@ -52,9 +52,11 @@ class InstanceLaunchConflict(ServiceException):
 
 
 class InstanceDoesNotExist(ServiceException):
+    message = "Instance does not exist"
 
-    def __init__(self, instance_id):
-        self.message = instance_id
+    def __init__(self, instance_id=None):
+        if instance_id:
+            self.message = instance_id
         self.status_code = 404
         super(InstanceDoesNotExist, self).__init__()
 
@@ -138,8 +140,10 @@ class DeviceBusyException(ServiceException):
 
 class SizeNotAvailable(ServiceException):
 
-    def __init__(self):
-        self.message = "Size Not Available."
+    def __init__(self, message):
+        if not message:
+            message = "Size Not Available."
+        self.message = message
         super(SizeNotAvailable, self).__init__()
 
     def __str__(self):

@@ -381,8 +381,12 @@ def sync_cloud_access(accounts, img, project_names=None):
     # Any names who aren't already on the image should be added
     # Find names who are marked as 'sharing' on DB but not on OpenStack
     for project_name in project_names:
-        group_name = project_name  # FIXME: This code should be changed when user-group-project associations change.
-        group = models.Group.objects.get(name=group_name)
+        # FIXME: Remove .strip() when 'bug' has been fixed
+        group_name = project_name.strip()  # FIXME: This code should be changed when user-group-project associations change.
+        try:
+            group = models.Group.objects.get(name=group_name)
+        except:
+            raise Exception("Invalid group name: %s" % group_name)
         for identity_membership in group.identitymembership_set.all():
             if identity_membership.identity.provider != accounts.core_provider:
                 logger.debug("Skipped %s -- Wrong provider" % identity_membership.identity)
@@ -406,21 +410,21 @@ def make_private(image_manager, image, provider_machine, tenant_list=[]):
         provider_machine.application.save()
     # Add all these people by default..
     owner = provider_machine.application.created_by
-    group_list = owner.group_set.all()
+    membership_list = owner.memberships.select_related('group')
     if tenant_list:
         # ASSERT: Groupnames == Usernames
-        tenant_list.extend([group.name for group in group_list])
+        tenant_list.extend([membership.group.name for membership in membership_list])
     else:
-        tenant_list = [group.name for group in group_list]
+        tenant_list = [membership.group.name for membership in membership_list]
     for tenant in tenant_list:
         if type(tenant) != unicode:
-            name = tenant.name
+            groupname = tenant.name
         else:
-            name = tenant
+            groupname = tenant
         try:
-            group = models.Group.objects.get(name=name)
+            group = models.Group.objects.get(name=groupname)
         except models.Group.DoesNotExist:
-            logger.warn("Group %s does not exist - Skipped sharing" % name)
+            logger.warn("Group %s does not exist - Skipped sharing" % groupname)
             pass
 
         obj, created = models.ApplicationMembership.objects.get_or_create(

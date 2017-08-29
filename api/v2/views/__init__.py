@@ -1,13 +1,11 @@
 # flake8: noqa
 from .account import AccountViewSet
-from .allocation import AllocationViewSet
 from .allocation_source import AllocationSourceViewSet
 from .allocation_source_command import AllocationSourceCommandViewSet
 from .boot_script import BootScriptViewSet
 from .base import BaseRequestViewSet
 from .credential import CredentialViewSet
 from .email_template import EmailTemplateViewSet
-from .event import EventViewSet
 from .group import GroupViewSet
 from .help_link import HelpLinkViewSet
 from .identity import IdentityViewSet
@@ -41,6 +39,7 @@ from .provider_type import ProviderTypeViewSet
 from .quota import QuotaViewSet
 from .renewal_strategy import RenewalStrategyViewSet
 from .resource_request import ResourceRequestViewSet
+from .resource_request_actions import ResourceRequest_UpdateQuotaViewSet
 from .reporting import ReportingViewSet
 from .size import SizeViewSet
 from .status_type import StatusTypeViewSet

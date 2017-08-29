@@ -2,6 +2,20 @@ from django.db.models import Q
 from django.utils import timezone
 
 
+def provider_contains_credential(key, value):
+    return (
+        Q(providercredential__key=key) &
+        Q(providercredential__value=value)
+    )
+
+
+def contains_credential(key, value):
+    return (
+        Q(credential__key=key) &
+        Q(credential__value=value)
+    )
+
+
 def inactive_versions():
     return (
         # Contains at least one version without an end-date OR
@@ -44,7 +58,6 @@ def only_current_provider(now_time=None):
         now_time = timezone.now()
     return (Q(provider__end_date__isnull=True) |
             Q(provider__end_date__gt=now_time)) &\
-        Q(provider__active=True) &\
         Q(provider__start_date__lt=now_time)
 
 
@@ -57,8 +70,7 @@ def only_current_instances(now_time=None, restrict_start=False):
         An instance.source is active if the provider is active and un-end-dated.
         """
         return (Q(source__provider__end_date__isnull=True) |
-                Q(source__provider__end_date__gt=now_time)) &\
-            Q(source__provider__active=True)
+                Q(source__provider__end_date__gt=now_time))
 
     if not now_time:
         now_time = timezone.now()
@@ -161,10 +173,9 @@ def only_current_source(now_time=None):
     """
     Filters the current instance_sources.
     """
-    def _active_provider():
+    def current_provider():
         return (Q(instance_source__provider__end_date__isnull=True) |
-                Q(instance_source__provider__end_date__gt=now_time)) &\
-            Q(instance_source__provider__active=True)
+                Q(instance_source__provider__end_date__gt=now_time))
 
     def _in_range():
         return (Q(instance_source__end_date__isnull=True) |
@@ -173,7 +184,7 @@ def only_current_source(now_time=None):
 
     if not now_time:
         now_time = timezone.now()
-    return _in_range() & _active_provider()
+    return _in_range() & current_provider()
 
 
 def only_public_providers(now_time=None):
@@ -260,7 +271,8 @@ def _query_membership_for_user(user):
     """
     if not user:
         return None
-    return Q(group__id__in=user.group_set.values('id'))
+    return Q(group__id__in=user.group_ids())
+
 
 def images_shared_with_user(user):
     """

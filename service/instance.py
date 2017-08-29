@@ -19,6 +19,9 @@ from rtwo.drivers.openstack_user import UserManager
 from rtwo.drivers.common import _token_to_keystone_scoped_project
 from service.driver import AtmosphereNetworkManager
 from service.mock import AtmosphereMockDriver, AtmosphereMockNetworkManager
+
+from rtwo.drivers.common import _connect_to_keystone_v3
+from rtwo.drivers.openstack_network import NetworkManager
 from rtwo.models.machine import Machine
 from rtwo.models.size import MockSize
 from rtwo.models.volume import Volume
@@ -37,6 +40,7 @@ from core.models.size import convert_esh_size
 from core.models.machine import ProviderMachine
 from core.models.volume import convert_esh_volume
 from core.models.provider import AccountProvider, Provider, ProviderInstanceAction
+from core.exceptions import ProviderNotActive
 
 from atmosphere import settings
 from atmosphere.settings import secrets
@@ -104,11 +108,17 @@ def reboot_instance(
         _permission_to_act(identity_uuid, "Reboot")
     else:
         _permission_to_act(identity_uuid, "Hard Reboot")
-    size = _get_size(esh_driver, esh_instance)
+    core_identity = CoreIdentity.objects.get(uuid=identity_uuid)
     esh_driver.reboot_instance(esh_instance, reboot_type=reboot_type)
+    update_status(
+        esh_driver,
+        esh_instance.id,
+        core_identity.provider.uuid,
+        core_identity.uuid,
+        user)
     # reboots take very little time..
     core_identity = CoreIdentity.objects.get(uuid=identity_uuid)
-    redeploy_init(esh_driver, esh_instance, core_identity)
+    redeploy_instance(esh_driver, esh_instance, core_identity, user=user, status_update=False)
 
 
 def resize_instance(esh_driver, esh_instance, size_alias,
@@ -237,12 +247,12 @@ def suspend_instance(esh_driver, esh_instance,
 
 
 # Networking specific
-def remove_ips(esh_driver, esh_instance, identity_uuid, update_meta=True):
+def remove_ips(esh_driver, esh_instance, core_identity_uuid, update_meta=True):
     """
     Returns: (floating_removed, fixed_removed)
     """
     from service.tasks.driver import update_metadata
-    core_identity = CoreIdentity.objects.get(uuid=identity_uuid)
+    core_identity = CoreIdentity.objects.get(uuid=core_identity_uuid)
     network_driver = _to_network_driver(core_identity)
     result = network_driver.disassociate_floating_ip(esh_instance.id)
     logger.info("Removed Floating IP for Instance %s - Result:%s"
@@ -393,41 +403,48 @@ def resize_and_redeploy(esh_driver, esh_instance, core_identity_uuid):
 
 
 def redeploy_instance(
-        core_identity,
         esh_driver,
         esh_instance,
-        username,
-        force_redeploy=False):
+        core_identity,
+        user=None,
+        status_update=True):
     """
-    EXPERIMENTAL.
-
-    Starts redeployment of an instance using the tmp_status metadata.
-
-    NOTE: Not used by API. See redeploy_init.
+    Starts redeployment of an instance using the tmp_status metadata,
+    including:
+    - networking (Floating IP assignment)
+    - deploying (Standard instance deployment)
+    - image-defined boot scripts
+    - user SSH keys
+    - user-defined boot scripts
     """
     from service.tasks.driver import get_idempotent_deploy_chain
-    if force_redeploy or esh_instance.extra.get('metadata').get(
-            'tmp_status',
-            None) == "":
-        esh_instance.extra['metadata']['tmp_status'] = "initializing"
-    deploy_chain = get_idempotent_deploy_chain(
-        esh_driver.__class__, esh_driver.provider, esh_driver.identity,
-        esh_instance, core_identity, username)
-    return deploy_chain.apply_async()
 
+    status = esh_instance.extra['status']
 
-def redeploy_init(esh_driver, esh_instance, core_identity):
-    """
-    Use this function to kick off the async task when you ONLY want to deploy
-    (No add fixed, No add floating)
-    """
-    from service.tasks.driver import deploy_init_to
+    # Future-TODO:
+    # if user:
+    #     ensure user has the ability to act on this instance.
+    if status not in ['active', 'redeploying', 'reboot', 'hard_reboot']:
+        raise Exception("Cannot redeploy to an instance in a non-active state. (Current state: %s)" % status)
+
+    # Force a specific history update
+    if status_update:
+        esh_instance.extra['task'] = None
+        esh_instance.extra['metadata']['tmp_status'] = "redeploying"
+        # Convert & Update status to redeploying
+        convert_esh_instance(esh_driver,
+                             esh_instance,
+                             str(core_identity.provider.uuid),
+                             str(core_identity.uuid),
+                             core_identity.created_by)
+
     if type(esh_driver) == AtmosphereMockDriver:
         return
-    logger.info("Add floating IP and Deploy")
-    deploy_init_to.s(esh_driver.__class__, esh_driver.provider,
-                     esh_driver.identity, esh_instance.id,
-                     core_identity, redeploy=True).apply_async()
+    # Start deployment chain based on the instance above
+    deploy_chain = get_idempotent_deploy_chain(
+        esh_driver.__class__, esh_driver.provider, esh_driver.identity,
+        esh_instance, core_identity, core_identity.created_by.username)
+    deploy_chain.apply_async()
 
 
 def restore_ip_chain(esh_driver, esh_instance, redeploy=False,
@@ -477,7 +494,7 @@ def restore_ip_chain(esh_driver, esh_instance, redeploy=False,
             esh_driver.__class__,
             esh_driver.provider,
             esh_driver.identity,
-            str(core_identity.uuid),
+            str(core_identity_uuid),
             esh_instance.id)
         fixed_ip_task.link(floating_ip_task)
     return init_task
@@ -669,36 +686,10 @@ def destroy_instance(user, core_identity_uuid, instance_alias):
         core_identity_uuid, instance_alias)
     if not success and esh_instance:
         raise Exception("Instance could not be destroyed")
-    elif esh_instance:
-        os_cleanup_networking(core_identity_uuid)
-        core_instance = end_date_instance(
-            user, esh_instance, core_identity_uuid)
-        return core_instance
-    else:
-        # Edge case - If you attempt to delete more than once...
-        core_instance = find_instance(instance_alias)
-        return core_instance
-
-
-def end_date_instance(user, esh_instance, core_identity_uuid):
-    # Retrieve the 'hopefully now deleted' instance and end date it.
-    identity = CoreIdentity.objects.get(uuid=core_identity_uuid)
-    esh_driver = get_cached_driver(identity=identity)
-    try:
-        core_instance = convert_esh_instance(esh_driver, esh_instance,
-                                             identity.provider.uuid,
-                                             identity.uuid,
-                                             user)
-        #NOTE: We may want to ensure instances are *actually* terminated prior to end dating them.
-        if core_instance:
-            core_instance.end_date_all()
-        return core_instance
-    except (socket_error, ConnectionFailure):
-        logger.exception("connection failure during destroy instance")
-        return None
-    except LibcloudInvalidCredsError:
-        logger.exception("LibcloudInvalidCredsError during destroy instance")
-        return None
+    os_cleanup_networking(core_identity_uuid)
+    core_instance = find_instance(instance_alias)
+    core_instance.end_date_all()
+    return core_instance
 
 
 def os_cleanup_networking(core_identity_uuid):
@@ -812,19 +803,6 @@ def update_status(esh_driver, instance_id, provider_uuid, identity_uuid, user):
                                          user)
 
 
-def get_core_instances(identity_uuid):
-    identity = CoreIdentity.objects.get(uuid=identity_uuid)
-    driver = get_cached_driver(identity=identity)
-    instances = driver.list_instances()
-    core_instances = [convert_esh_instance(driver,
-                                           esh_instance,
-                                           identity.provider.uuid,
-                                           identity.uuid,
-                                           identity.created_by)
-                      for esh_instance in instances]
-    return core_instances
-
-
 def _pre_launch_validation(
         username,
         esh_driver,
@@ -882,13 +860,15 @@ def launch_instance(user, identity_uuid,
          "Request Received"))
     identity = CoreIdentity.objects.get(uuid=identity_uuid)
     provider = identity.provider
+    if not provider.is_active():
+        raise ProviderNotActive(provider)
 
     esh_driver = get_cached_driver(identity=identity)
 
-    # May raise Exception("Size not available")
-    size = check_size(esh_driver, size_alias, provider)
     # May raise Exception("Volume/Machine not available")
     boot_source = get_boot_source(user.username, identity_uuid, source_alias)
+    # May raise Exception("Size not available")
+    size = check_size(esh_driver, size_alias, provider, boot_source)
 
     # Raise any other exceptions before launching here
     _pre_launch_validation(
@@ -1202,11 +1182,20 @@ def generate_uuid4():
 ################################
 
 
-def check_size(esh_driver, size_alias, provider):
+def validate_size_fits_boot_source(esh_size, boot_source):
+    disk_size = esh_size.disk
+    if disk_size == 0 or boot_source.size_gb == 0:
+        return
+    if boot_source.size_gb > disk_size:
+        raise SizeNotAvailable("Size Not Available. Disk is %s but image requires at least %s" % (disk_size, boot_source.size_gb))
+
+def check_size(esh_driver, size_alias, provider, boot_source):
     try:
         esh_size = esh_driver.get_size(size_alias)
         if not convert_esh_size(esh_size, provider.uuid).active():
             raise SizeNotAvailable()
+        if boot_source.is_machine():
+            validate_size_fits_boot_source(esh_size, boot_source)
         return esh_size
     except LibcloudBadResponseError as bad_response:
         return _parse_libcloud_error(provider, bad_response)
@@ -1308,7 +1297,7 @@ def _test_for_licensing(esh_machine, identity):
     application = app_version.application
     raise Exception(
         "Identity %s did not meet the requirements of the associated license on Application %s + Version %s" %
-        (application.name, app_version.name))
+        (identity, application.name, app_version.name))
 
 
 def check_allocation(username, allocation_source):
@@ -1617,6 +1606,9 @@ def user_network_init(core_identity):
     username = core_identity.get_credential('key')
     if not username:
         username = core_identity.created_by.username
+    esh_driver = get_cached_driver(identity=core_identity)
+    dns_nameservers = core_identity.provider.get_config('network', 'dns_nameservers', [])
+    subnet_pool_id = core_identity.provider.get_config('network', 'subnet_pool_id', None)
     topology_name = core_identity.provider.get_config('network', 'topology', None)
     if not topology_name:
         logger.error(
@@ -1629,7 +1621,7 @@ def user_network_init(core_identity):
     network_strategy = initialize_user_network_strategy(
         topology_name, core_identity, network_driver, user_neutron)
     network_resources = network_strategy.create(
-        username=username, dns_nameservers=dns_nameservers)
+        username=username, dns_nameservers=dns_nameservers, subnet_pool_id=subnet_pool_id)
     network_strategy.post_create_hook(network_resources)
     return network_resources
 
@@ -2032,7 +2024,7 @@ def run_instance_action(user, identity, instance_id, action_type, action_params)
     elif 'revert_resize' == action_type:
         result_obj = esh_driver.revert_resize_instance(esh_instance)
     elif 'redeploy' == action_type:
-        result_obj = redeploy_init(esh_driver, esh_instance, identity)
+        result_obj = redeploy_instance(esh_driver, esh_instance, identity, user=user)
     elif 'resume' == action_type:
         result_obj = resume_instance(esh_driver, esh_instance,
                                      provider_uuid, identity_uuid,

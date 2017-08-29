@@ -1,5 +1,4 @@
 # flake8: noqa
-from .allocation import AllocationSummarySerializer
 from .group import GroupSummarySerializer
 from .identity import IdentitySummarySerializer
 from .image import ImageSummarySerializer
@@ -13,6 +12,7 @@ from .project import ProjectSummarySerializer
 from .provider import ProviderSummarySerializer
 from .provider_machine import ProviderMachineSummarySerializer
 from .quota import QuotaSummarySerializer
+from .credential import CredentialSummarySerializer
 from .size import SizeSummarySerializer
 from .status_type import StatusTypeSummarySerializer
 from .tag import TagSummarySerializer

@@ -4,7 +4,6 @@ Deploy methods for Atmosphere
 import os
 import re
 
-from django.template import Context
 from django.template.loader import render_to_string
 from django.utils.text import slugify
 from django.utils.timezone import datetime
@@ -23,7 +22,7 @@ from django_cyverse_auth.protocol import ldap
 
 from core.core_logging import create_instance_logger
 from core.models.ssh_key import get_user_ssh_keys
-from core.models import Provider, Identity
+from core.models import Provider, Identity, Instance, SSHKey, AtmosphereUser
 
 from service.exceptions import AnsibleDeployException
 
@@ -31,13 +30,17 @@ from service.exceptions import AnsibleDeployException
 def ansible_deployment(
     instance_ip, username, instance_id, playbooks_dir,
     limit_playbooks=[], limit_hosts={}, extra_vars={},
-    raise_exception=True, **runner_opts):
+    raise_exception=True, debug=False, **runner_opts):
     """
     Use service.ansible to deploy to an instance.
     """
     if not check_ansible():
         return []
     # Expecting to be path-relative to the playbook path, so use basename
+    if type(limit_playbooks) == str:
+        limit_playbooks = limit_playbooks.split(",")
+    if type(limit_playbooks) != list:
+        raise Exception("Invalid 'limit_playbooks' argument (%s). Expected List" % limit_playbooks)
     limit_playbooks = [os.path.basename(filepath) for filepath in limit_playbooks]
     logger = create_instance_logger(
         deploy_logger,
@@ -45,7 +48,7 @@ def ansible_deployment(
         username,
         instance_id)
     hostname = build_host_name(instance_id, instance_ip)
-    configure_ansible()
+    configure_ansible(debug=debug)
     if not limit_hosts:
         if hostname:
             limit_hosts = hostname
@@ -58,6 +61,14 @@ def ansible_deployment(
         extra_vars.update({
             "TIMEZONE": time_zone,
         })
+    shared_users = AtmosphereUser.users_for_instance(instance_id).values_list('username', flat=True)
+    if not shared_users:
+        shared_users = [username]
+    if username not in shared_users:
+        shared_users.append(username)
+    extra_vars.update({
+        "SHARED_USERS": shared_users,
+    })
     extra_vars.update({
         "ATMOUSERNAME": username,
     })
@@ -135,7 +146,7 @@ def instance_deploy(instance_ip, username, instance_id,
         extra_vars=extra_vars, **runner_opts)
 
 
-def user_deploy(instance_ip, username, instance_id):
+def user_deploy(instance_ip, username, instance_id, **runner_opts):
     """
     Use service.ansible to deploy to an instance.
     #NOTE: This method will _NOT_ work if you do not run instance deployment *FIRST*!
@@ -143,13 +154,27 @@ def user_deploy(instance_ip, username, instance_id):
     """
     playbooks_dir = settings.ANSIBLE_PLAYBOOKS_DIR
     playbooks_dir = os.path.join(playbooks_dir, 'user_deploy')
-    user_keys = [k.pub_key for k in get_user_ssh_keys(username)]
+
+    #TODO: 'User-selectable 'SSH strategy' for instances?
+    # Example 'user only' strategy:
+    # user_keys = [k.pub_key for k in get_user_ssh_keys(username)]
+    instance = Instance.objects.get(provider_alias=instance_id)
+    scripts = instance.scripts.all()  # TODO: determine if script should be run by passing in a 'first_deploy=True/False'
+
+    # Example 'all members'  strategy:
+    if not instance.project:
+        raise Exception("Expected this instance to have a project, found None: %s" % instance)
+    group = instance.project.owner
+    group_ssh_keys = SSHKey.keys_for_group(group)
+    user_keys = [k.pub_key for k in group_ssh_keys]
+
     extra_vars = {
-        "USERSSHKEYS": user_keys
+        "USERSSHKEYS": user_keys,
+        "SCRIPTS": [{"name": s.get_title_slug(), "text": s.get_text()} for s in scripts]
     }
     return ansible_deployment(
         instance_ip, username, instance_id, playbooks_dir,
-        extra_vars=extra_vars)
+        extra_vars=extra_vars, **runner_opts)
 
 
 def run_utility_playbooks(instance_ip, username, instance_id,
@@ -268,17 +293,17 @@ def check_ansible():
     return exists
 
 
-def configure_ansible():
+def configure_ansible(debug=False):
     """
     Configure ansible to work with service.ansible and subspace.
     """
     subspace.set_constants("HOST_KEY_CHECKING", False)
     subspace.set_constants(
         "DEFAULT_ROLES_PATH", settings.ANSIBLE_ROLES_PATH)
+    os.environ["ANSIBLE_DEBUG"] = "true" if debug else "false"
     if settings.ANSIBLE_CONFIG_FILE:
         os.environ["ANSIBLE_CONFIG"] = settings.ANSIBLE_CONFIG_FILE
         os.environ["PYTHONOPTIMIZE"] = "1" #NOTE: Required to run ansible2 + celery + prefork concurrency
-        #os.environ["ANSIBLE_DEBUG"] = "true"
         # Alternatively set this in ansible.cfg: debug = true
         subspace.constants.reload_config()
 
@@ -308,7 +333,7 @@ def build_host_name(instance_id, ip):
             raise ValueError(
                 "Invalid HOSTNAME_FORMAT: Expected string containing "
                 "at least one of the IP octets. Received: %s"
-                "(ex:'vm%(three)s-%(four)s.my_domain.com')"
+                "(ex:'vm%%(three)s-%%(four)s.my_domain.com')"
                 % hostname_format_str)
         return hostname_format_str % hostnaming_format_map
     except (KeyError, TypeError, ValueError):
@@ -455,63 +480,3 @@ def umount_volume(mount_location):
 def lsof_location(mount_location):
     return ScriptDeployment("lsof | grep %s" % (mount_location),
                             name="./deploy_lsof_location.sh")
-
-
-def step_script(step):
-    script = str(step.script)
-    if not script.startswith("#!"):
-        script = "#! /usr/bin/env bash\n" + script
-    return ScriptDeployment(script, name="./" + step.get_script_name())
-
-def shell_lookup_helper(username):
-    zsh_user = False
-    ldap_info = ldap._search_ldap(username)
-    try:
-        ldap_info_dict = ldap_info[0][1]
-    except IndexError:
-        return False
-    for key in ldap_info_dict.iterkeys():
-        if key == "loginShell":
-            if 'zsh' in ldap_info_dict[key][0]:
-                zsh_user = True
-    return zsh_user
-
-
-def echo_test_script():
-    return ScriptDeployment(
-        'echo "Test deployment working @ %s"' % datetime.now(),
-        name="./deploy_echo.sh")
-
-
-def wrap_script(script_text, script_name):
-    """
-    NOTE: In current implementation, the script can only be executed, and not
-    logged.
-
-    Implementation v2:
-    * Write to file
-    * Chmod the file
-    * Execute and redirect output to stdout/stderr to logfile.
-    """
-    # logfile = "/var/log/atmo/post_boot_scripts.log"
-    # kludge: weirdness without the str cast...
-    script_text = str(script_text)
-    full_script_name = "./deploy_boot_script_%s.sh" % (slugify(script_name),)
-    return ScriptDeployment(
-        script_text, name=full_script_name)
-
-
-def inject_env_script(username):
-    """
-    This is the 'raw script' that will be used to prepare the environment.
-    TODO: Find a better home for this. Probably use ansible for this.
-    """
-    env_file = "$HOME/.bashrc"
-    template = "scripts/bash_inject_env.sh"
-    context = {
-        "username": username,
-        "env_file": env_file,
-    }
-    rendered_script = render_to_string(
-        template, context=Context(context))
-    return rendered_script

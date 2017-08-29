@@ -111,7 +111,7 @@ class ProviderMachineViewSet(MultipleFieldLookup, OwnerUpdateViewSet):
             # Showing non-end dated, public ProviderMachines
             shared_set = ProviderMachine.objects.filter(
                 only_current_source(),
-                members__in=request_user.group_set.values('id'))
+                members__id__in=request_user.memberships.values_list('group__id', flat=True))
             # NOTE: Showing 'my pms' EVEN if they are end-dated.
             my_set = ProviderMachine.objects.filter(user_provider_machine_set(request_user))
             if request_user.is_staff:
@@ -126,5 +126,6 @@ class ProviderMachineViewSet(MultipleFieldLookup, OwnerUpdateViewSet):
             '-instance_source__start_date')
 
         if not isinstance(request_user, AnonymousUser):
-            queryset = queryset.filter(in_provider_list(request_user.current_providers))
+            launchable_providers = request_user.current_providers.filter(active=True)
+            queryset = queryset.filter(in_provider_list(launchable_providers))
         return queryset

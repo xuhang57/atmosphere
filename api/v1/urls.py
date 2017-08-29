@@ -2,6 +2,7 @@
 """
 Routes for api v1 endpoints
 """
+import django.views.decorators.cache
 from django.conf.urls import url
 
 from rest_framework.urlpatterns import format_suffix_patterns
@@ -111,7 +112,7 @@ urlpatterns = format_suffix_patterns([
         '(?P<instance_id>%s)/action$' % uuid_match,
         views.InstanceAction.as_view(), name='instance-action'),
     url(identity_specific + r'/instance/(?P<instance_id>%s)$' % uuid_match,
-        views.Instance.as_view(), name='instance-detail'),
+        django.views.decorators.cache.cache_page(60 * 1)(views.Instance.as_view()), name='instance-detail'),
     url(identity_specific + r'/instance$',
         views.InstanceList.as_view(), name='instance-list'),
 
@@ -159,11 +160,6 @@ urlpatterns = format_suffix_patterns([
     url(identity_specific + r'$', views.Identity.as_view(),
         name='identity-detail'),  # OLD
 
-    url(r'^credential$', views.CredentialList.as_view(),
-        name='credential-list'),
-    url(r'^credential/(?P<identity_uuid>%s)$' % (uuid_match,),
-        views.CredentialDetail.as_view(), name='credential-detail'),
-
     url(r'^identity$', views.IdentityDetailList.as_view(),
         name='identity-detail-list'),
     url(r'^identity/(?P<identity_uuid>%s)$' % (uuid_match,),
@@ -183,11 +179,6 @@ urlpatterns = format_suffix_patterns([
 
     url(identity_specific + r'/profile$',
         views.Profile.as_view(), name='profile-detail'),
-
-    url(r'^allocation$',
-        views.AllocationList.as_view(), name='allocation-list'),
-    url(r'^allocation/(?P<quota_id>%s)$' % (id_match,),
-        views.AllocationDetail.as_view(), name='quota-detail'),
 
     url(r'^quota$',
         views.QuotaList.as_view(), name='quota-list'),
@@ -211,10 +202,6 @@ urlpatterns = format_suffix_patterns([
     url(r'^license/(?P<license_id>%s)$' % uuid_match,
         views.License.as_view(),
         name='license-detail'),
-
-    url(r'^monitoring$',
-        views.MonitoringList.as_view(),
-        name='monitoring-list'),
 
     url(r'^cloud_admin_imaging_request$',
         views.CloudAdminImagingRequestList.as_view(),
@@ -268,6 +255,11 @@ urlpatterns = format_suffix_patterns([
     url(identity_specific + r'/meta/(?P<action>.*)$',
         views.MetaAction.as_view(), name='meta-action'),
 
+
+    url(r'^credential$', views.CredentialList.as_view(),
+        name='credential-list'),
+    url(r'^credential/(?P<identity_uuid>%s)$' % (uuid_match,),
+        views.CredentialDetail.as_view(), name='credential-detail'),
     url(identity_specific + r'/members$',
         views.IdentityMembershipList.as_view(),
         name='identity-membership-list'),
