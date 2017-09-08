@@ -877,8 +877,8 @@ def deploy_ready_test(driverCls, provider, identity, instance_id,
     # USE ANSIBLE
     try:
         username = identity.user.username
-        playbooks = ansible_ready_to_deploy(instance.ip, username, instance_id)
-        _update_status_log(instance, "Ansible Finished (ready test) for %s." % instance.ip)
+        #playbooks = ansible_ready_to_deploy(instance.ip, username, instance_id)
+        #_update_status_log(instance, "Ansible Finished (ready test) for %s." % instance.ip)
         celery_logger.debug("deploy_ready_test task finished at %s." % datetime.now())
     except AnsibleDeployException as exc:
         deploy_ready_test.retry(exc=exc)
@@ -919,8 +919,8 @@ def _deploy_instance_for_user(driverCls, provider, identity, instance_id,
         _deploy_instance.retry(exc=exc)
     try:
         username = identity.user.username
-        user_deploy(instance.ip, username, instance_id)
-        _update_status_log(instance, "Ansible Finished for %s." % instance.ip)
+        #user_deploy(instance.ip, username, instance_id)
+        #_update_status_log(instance, "Ansible Finished for %s." % instance.ip)
         celery_logger.debug("_deploy_instance_for_user task finished at %s." % datetime.now())
     except AnsibleDeployException as exc:
         celery_logger.exception(exc)
@@ -964,8 +964,8 @@ def _deploy_instance(driverCls, provider, identity, instance_id,
         _deploy_instance.retry(exc=exc)
     try:
         username = identity.user.username
-        instance_deploy(instance.ip, username, instance_id)
-        _update_status_log(instance, "Ansible Finished for %s." % instance.ip)
+        #instance_deploy(instance.ip, username, instance_id)
+        #_update_status_log(instance, "Ansible Finished for %s." % instance.ip)
         celery_logger.debug("_deploy_instance task finished at %s." % datetime.now())
     except AnsibleDeployException as exc:
         celery_logger.exception(exc)
