@@ -746,12 +746,15 @@ def get_chain_from_active_with_ip(
     deploy_ready_task.link_error(
         deploy_failed.s(driverCls, provider, identity, instance.id))
     deploy_meta_task.link(deploy_task)
-    deploy_task.link(check_web_desktop)
-    check_web_desktop.link(check_vnc_task)  # Above this line, atmo is responsible for success.
+    deploy_task.link(deploy_user_task)
+    deploy_task.link_error(
+        deploy_failed.s(driverCLs, provider, identity, instance.id))
+    #deploy_task.link(check_web_desktop)
+    #check_web_desktop.link(check_vnc_task)  # Above this line, atmo is responsible for success.
 
-    check_web_desktop.link_error(
-        deploy_failed.s(driverCls, provider, identity, instance.id))
-    check_vnc_task.link(deploy_user_task)  # this line and below, user can create a failure.
+    #check_web_desktop.link_error(
+    #    deploy_failed.s(driverCls, provider, identity, instance.id))
+    #check_vnc_task.link(deploy_user_task)  # this line and below, user can create a failure.
     # ready -> metadata -> deployment..
 
     deploy_user_task.link(remove_status_chain)
