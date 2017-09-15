@@ -715,10 +715,10 @@ def get_chain_from_active_with_ip(
     deploy_user_task = _deploy_instance_for_user.si(
         driverCls, provider, identity, instance.id,
         username, None, redeploy)
-    check_vnc_task = check_process_task.si(
-        driverCls, provider, identity, instance.id)
-    check_web_desktop = check_web_desktop_task.si(
-        driverCls, provider, identity, instance.id)
+    #check_vnc_task = check_process_task.si(
+    #    driverCls, provider, identity, instance.id)
+    #check_web_desktop = check_web_desktop_task.si(
+    #    driverCls, provider, identity, instance.id)
     remove_status_chain = get_remove_status_chain(
         driverCls,
         provider,
@@ -748,7 +748,7 @@ def get_chain_from_active_with_ip(
     deploy_meta_task.link(deploy_task)
     deploy_task.link(deploy_user_task)
     deploy_task.link_error(
-        deploy_failed.s(driverCLs, provider, identity, instance.id))
+        deploy_failed.s(driverCls, provider, identity, instance.id))
     #deploy_task.link(check_web_desktop)
     #check_web_desktop.link(check_vnc_task)  # Above this line, atmo is responsible for success.
 
