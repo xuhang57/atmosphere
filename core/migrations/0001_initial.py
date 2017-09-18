@@ -328,9 +328,9 @@ class Migration(migrations.Migration):
             name='EmailTemplate',
             fields=[
                 ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('email_address', models.EmailField(default=b'support@cyverse.org', max_length=254)),
-                ('email_header', models.TextField(default=b'')),
-                ('email_footer', models.TextField(default=b'CyVerse Atmosphere Team')),
+                ('email_address', models.EmailField(default=b'giji@lists.massopen.cloud', max_length=254)),
+                ('email_header', models.TextField(default=b'GIJI Support')),
+                ('email_footer', models.TextField(default=b'GIJI Support Team')),
             ],
             options={
                 'db_table': 'email_template',
