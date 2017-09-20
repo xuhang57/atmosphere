@@ -56,6 +56,9 @@ class AccountCreationPlugin(object):
                 logger.debug(
                     "Creating new account for %s with credentials - %s"
                     % (username, credentials))
+                #HOTFIX- FIXME: This line should be updated to make AtmosphereUser creation
+                # (Including email, first,last) as an explicit part of account creation plugin
+                # account_driver _expects_ user to exist prior to creation of identity.
                 atmo_user = AtmosphereUser.objects.get_or_create(username=username)
                 account_driver = get_account_driver(provider)
                 if not account_driver:
