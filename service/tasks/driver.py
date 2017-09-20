@@ -1133,10 +1133,11 @@ def add_floating_ip(driverCls, provider, identity, core_identity_uuid,
         celery_logger.debug("add_floating_ip task started at %s." % datetime.now())
         core_identity = Identity.objects.get(uuid=core_identity_uuid)
 
+        driver = get_driver(driverCls, provider, identity)
+
         # NOTE: This if statement is a HACK! It will be removed when IP management is enabled in an upcoming version. -SG
         if core_identity.provider.location != 'iPlant Cloud - Tucson':
             # Remove unused floating IPs first, so they can be re-used
-            driver = get_driver(driverCls, provider, identity)
             driver._clean_floating_ip()
         # ENDNOTE
 
