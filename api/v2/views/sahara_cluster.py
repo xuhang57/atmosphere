@@ -58,25 +58,49 @@ class ClusterViewSet(AuthViewSet):
         net_id= network_driver.neutron.list_networks()['networks'][0]['id']
         image = None
         for img in user_driver.glance.images.list():
-	    if "Sahara: Spark 1.6.0 OCATA" in img.name:
-		image = img
-        image_id= image.id
-        cluster_template = network_driver.sahara.cluster_templates.list()
-        if cluster_template:
-            ct = network_driver.sahara.cluster_templates.list()[0]
-        else:
-            node_group_templates = network_driver.sahara.node_group_templates.list()
-            if node_group_templates:
-                ct = self._create_cluster_template(network_driver)
+            if plugin_name == "spark":
+                if "Sahara: Spark 1.6.0 OCATA" in img.name:
+                    image = img
+                    break
+            elif plugin_name == "vanilla":
+            	if "Sahara: MOC Vanilla 2.7.1 OCATA" in img.name:
+                    image = img
+                    break
+            elif plugin_name == "storm":
+            	if "Sahara: Storm 1.0.1 OCATA" in img.name:
+                    image = img
+                    break
             else:
-                self._create_node_group_template(network_driver)
-                ct = self._create_cluster_template(network_driver)
+            	raise Exception("Cannot find an image for the plugin")
+        image_id = image.id
+        files, heat_template = template_utils.process_template_path("/home/ubuntu/heat-template.yml")
 
-        cluster = self._create_cluster(network_driver, plugin_name, hadoop_version, ct, image_id, kp, name, net_id)
-        results = [{"id": cluster.id, "clusterName": name, "pluginName": plugin_name, "hadoop_version": hadoop_version}]
+        heat_template['parameters']['image']['default'] = str(image_id)
+        heat_template['parameters']['flavor']['default'] = str(cluster_size['name'])
+        heat_template['parameters']['key']['default'] = str(kp.name)
+        heat_template['parameters']['private_net']['default'] = str(net_id)
+        heat_template['parameters']['plugin']['default'] = str(plugin_name)
+        heat_template['parameters']['version']['default'] = str(hadoop_version)
+        heat_template['resources']['giji_cluster']['properties']['name'] = str(name)
+        heat_template['resources']['giji_ct_tmpl']['properties']['node_groups'][1]['count'] = str(worker_number)
+
+        try:
+            stackCreate = network_driver.heat.stacks.create(stack_name=name, template=heat_template, files=files)
+        except Exception as e:
+        	raise Exception(e)
+        stack_id = str(stackCreate['stack']['id'])
+        time.sleep(5)
+        giji_cluster = network_driver.heat.resources.get(stack_id, "giji_cluster")
+        cluster_id = str(giji_cluster.physical_resource_id)
+        if not cluster_id:
+            time.sleep(5)
+            giji_cluster = network_driver.heat.resources.get(stack_id, "giji_cluster")
+            cluster_id = str(giji_cluster.physical_resource_id)
+            if not cluster_id:
+                raise Exception("No cluster_id")
+
+        results = [{"id": cluster.id, "clusterName": name, "pluginName": plugin_name, "hadoop_version": hadoop_version, "stackID": stack_id}]
         return Response(results, status=status.HTTP_201_CREATED)
-        #identity = Identity.objects.get(created_by=user)
-        #serializer.save(identity=identity)
 
     def get(self, request, pk=None):
         return self.list(request)
@@ -103,8 +127,8 @@ class ClusterViewSet(AuthViewSet):
         user = self.request.user
         network_driver, user_driver = self.get_network_and_user_driver(user)
         url_list = request.path.split("/")
-        cluster_id = url_list[-1]
-        network_driver.sahara.clusters.delete(str(cluster_id))
+        stack_id = url_list[-1]
+        network_driver.heat.stacks.delete(str(stack_id))
         return Response({}, status=status.HTTP_204_NO_CONTENT)
 
     def get_network_and_user_driver(self, user):
