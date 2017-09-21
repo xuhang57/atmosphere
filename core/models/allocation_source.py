@@ -1,8 +1,10 @@
+import decimal
+
 from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.utils import timezone
 from threepio import logger
-from pprint import pprint
 from uuid import uuid4
 
 class AllocationSource(models.Model):
@@ -36,6 +38,7 @@ class AllocationSource(models.Model):
         user: If passed in *and* allocation source is 'special', calculate remaining time based on user snapshots.
 
         Will return a negative number if 'over allocation', when `compute_used` is larger than `compute_allowed`.
+        Will return Infinity if `compute_allowed` is `-1` (or any negative number)
         :return: decimal.Decimal
         :rtype: decimal.Decimal
         """
@@ -49,10 +52,16 @@ class AllocationSource(models.Model):
                     "The structure of settings.SPECIAL_ALLOCATION_SOURCES "
                     "has changed! Verify your settings are correct and/or "
                     "change the lines of code above.")
-            last_snapshot = self.user_allocation_snapshots.get(user=user)
+            try:
+                last_snapshot = self.user_allocation_snapshots.get(user=user)
+            except ObjectDoesNotExist:
+                logger.exception('User allocation snapshot does not exist anymore (or yet), so returning -1')
+                return -1
         else:
             compute_allowed = self.compute_allowed
             last_snapshot = self.snapshot
+        if compute_allowed < 0:
+            return decimal.Decimal('Infinity')
         compute_used = last_snapshot.compute_used if last_snapshot else 0
         remaining_compute = compute_allowed - compute_used
         return remaining_compute
