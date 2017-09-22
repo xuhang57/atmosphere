@@ -72,7 +72,7 @@ class ClusterViewSet(AuthViewSet):
             	raise Exception("Cannot find an image for the plugin")
         image_id = image.id
 
-        files, heat_template = template_utils.process_template_path("/home/ubuntu/heat-template.yml")
+        files, heat_template = template_utils.process_template_path("/opt/dev/atmosphere/heat-template.yml")
 
         heat_template['parameters']['image']['default'] = str(image_id)
         heat_template['parameters']['flavor']['default'] = str(cluster_size['name'])
