@@ -1,3 +1,5 @@
+import time
+from heatclient.common import template_utils
 from api.v2.views.base import AuthViewSet, AuthOptionalViewSet
 
 from core.models import AtmosphereUser, Identity
@@ -12,6 +14,7 @@ from rest_framework import status
 from rest_framework.decorators import detail_route
 
 from threepio import logger
+
 
 class ClusterViewSet(AuthViewSet):
 
@@ -36,11 +39,12 @@ class ClusterViewSet(AuthViewSet):
         identity = Identity.objects.get(created_by=user)
         all_creds = identity.get_all_credentials()
         auth_url = all_creds.get('auth_url')
+        worker_number = data['workerNum']
         if not "/v3" in auth_url:
             auth_url += "/v3"
         project_name = identity.project_name()
         token = all_creds['ex_force_auth_token']
-        token_auth=v3.Token(
+        token_auth = v3.Token(
             auth_url=auth_url,
             token=token,
             project_name=project_name,
@@ -49,25 +53,55 @@ class ClusterViewSet(AuthViewSet):
         network_driver = NetworkManager(session=ses)
         user_driver = UserManager(auth_url=auth_url, auth_token=token, project_name=project_name, domain_name="default", session=ses, version='v3')
         kp = user_driver.nova.keypairs.list()[0]
-        net_id= network_driver.neutron.list_networks()['networks'][0]['id']
+        net_id = network_driver.neutron.list_networks()['networks'][0]['id']
         image = None
         for img in user_driver.glance.images.list():
-            if "Sahara: Spark 1.6.0 OCATA" in img.name:
-                image = img
-                image_id= image.id
-        cluster_template = network_driver.sahara.cluster_templates.list()
-        if cluster_template:
-            ct = network_driver.sahara.cluster_templates.list()[1]
-        else:
-            node_group_templates = network_driver.sahara.node_group_templates.list()
-            if node_group_templates:
-                ct = self._create_cluster_template(network_driver)
+            if plugin_name == "spark":
+                if "Sahara: Spark 1.6.0 OCATA" in img.name:
+                    image = img
+                    break
+            elif plugin_name == "vanilla":
+            	if "Sahara: MOC Vanilla 2.7.1 OCATA" in img.name:
+                    image = img
+                    break
+            elif plugin_name == "storm":
+            	if "Sahara: Storm 1.0.1 OCATA" in img.name:
+                    image = img
+                    break
             else:
-                self._create_node_group_template(network_driver)
-                ct = self._create_cluster_template(network_driver)
+            	raise Exception("Cannot find an image for the plugin")
+        image_id = image.id
 
-        cluster = self._create_cluster(network_driver, plugin_name, hadoop_version, ct, image_id, kp, name, net_id)
-        results = [{"id": cluster.id, "clusterName": name, "pluginName": plugin_name, "hadoop_version": hadoop_version}]
+        files, heat_template = template_utils.process_template_path("/home/ubuntu/heat-template.yml")
+
+        heat_template['parameters']['image']['default'] = str(image_id)
+        heat_template['parameters']['flavor']['default'] = str(cluster_size['name'])
+        heat_template['parameters']['key']['default'] = str(kp.name)
+        heat_template['parameters']['private_net']['default'] = str(net_id)
+        heat_template['parameters']['plugin']['default'] = str(plugin_name)
+        heat_template['parameters']['version']['default'] = str(hadoop_version)
+
+        heat_template['resources']['giji_cluster']['properties']['name'] = str(name)
+        heat_template['resources']['giji_ct_tmpl']['properties']['node_groups'][1]['count'] = str(worker_number)
+
+        logger.debug(heat_template)
+        try:
+            stackCreate = network_driver.heat.stacks.create(stack_name=name, template=heat_template, files=files)
+        except Exception as e:
+            raise Exception(e)
+        stack_id = str(stackCreate['stack']['id'])
+        time.sleep(5)
+        giji_cluster = network_driver.heat.resources.get(stack_id, "giji_cluster")
+        cluster_id = str(giji_cluster.physical_resource_id)
+        if not cluster_id:
+            logger.debug("no cluster_id, going to sleep for 5 seconds")
+            time.sleep(5)
+            logger.debug("slept for 5 secs")
+            giji_cluster = network_driver.heat.resources.get(stack_id, "giji_cluster")
+            cluster_id = str(giji_cluster.physical_resource_id)
+            if not cluster_id:
+                raise Exception("No cluster_id")
+        results = [{"id": cluster_id, "clusterName": name, "pluginName": plugin_name, "hadoop_version": hadoop_version, "stackID": stack_id}]
         return Response(results, status=status.HTTP_201_CREATED)
 
 
@@ -89,7 +123,6 @@ class ClusterViewSet(AuthViewSet):
                 results.append({"clusterName": cluster.name, "id": cluster.id,
                 "pluginName": cluster.plugin_name, "clusterStatus":
                 cluster.status, "clusterMasterIP": "not associated"})
-        return Response(results, status=status.HTTP_200_OK)
         return Response(results, status=status.HTTP_200_OK)
 
 
@@ -121,13 +154,13 @@ class ClusterViewSet(AuthViewSet):
         for cluster in clusters_list:
             results.append({"clusterName": cluster.name, "id": cluster.id, "pluginName": cluster.plugin_name, "clusterStatus": "Luanched"})
         return Response(results, status=status.HTTP_200_OK)
-
+    
     def destroy(self, request, pk=None):
         user = self.request.user
         network_driver, user_driver = self.get_network_and_user_driver(user)
         url_list = request.path.split("/")
-        cluster_id = url_list[-1]
-        network_driver.sahara.clusters.delete(str(cluster_id))
+        stack_id = url_list[-1]
+        network_driver.heat.stacks.delete(str(stack_id))
         return Response({}, status=status.HTTP_204_NO_CONTENT)
 
     def get_network_and_user_driver(self, user):
@@ -147,25 +180,3 @@ class ClusterViewSet(AuthViewSet):
         network_driver = NetworkManager(session=ses)
         user_driver = UserManager(auth_url=auth_url, auth_token=token, project_name=project_name, domain_name="default", session=ses, version='v3')
         return network_driver, user_driver
-
-    def _create_node_group_template(self, network_driver):
-        node_processes_master = ["namenode", "master"]
-        node_processes_worker = ["datanode", "slave"]
-        network_driver.sahara.node_group_templates.create(plugin_name="spark", hadoop_version="1.6.0", node_processes=node_processes_master, flavor_id = '2', name ='test-master-template-spark-cli')
-        network_driver.sahara.node_group_templates.create(plugin_name="spark", hadoop_version="1.6.0", node_processes=node_processes_worker, flavor_id = '2', name ='test-worker-template-spark-cli')
-
-    def _create_cluster_template(self, network_driver):
-        worker, master = None, None
-        for template in network_driver.sahara.node_group_templates.list():
-            if "worker" in template.name:
-                worker = template
-            else:
-                master = template
-        node_groups = [{"name": "worker", "count": 2, "node_group_template_id": str(worker.id)}, {"name": "master", "count": 1, "node_group_template_id": str(master.id)}]
-        ct = network_driver.sahara.cluster_templates.create(plugin_name="spark", hadoop_version="1.6.0", node_groups=node_groups, name="test-cluster-template-cli")
-        return ct
-
-    def _create_cluster(self, network_driver, plugin_name, hadoop_version, ct, image_id, kp, name, net_id):
-        cluster = network_driver.sahara.clusters.create(plugin_name=plugin_name, hadoop_version=hadoop_version, cluster_template_id=str(ct.id), default_image_id=str(image_id), user_keypair_id=str(kp.id), name=name, net_id=str(net_id))
-        return cluster
-
