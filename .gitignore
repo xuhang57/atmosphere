@@ -56,3 +56,4 @@ scratch
 .coverage
 coverage.xml
 htmlcov/
+rerun_failing.features
