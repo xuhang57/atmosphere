@@ -158,7 +158,7 @@ def confirm_resize(
 
 
 def stop_instance(esh_driver, esh_instance, provider_uuid, identity_uuid, user,
-                  reclaim_ip=True):
+                  reclaim_ip=False):
     """
 
     raise LibcloudInvalidCredsError
@@ -181,7 +181,7 @@ def stop_instance(esh_driver, esh_instance, provider_uuid, identity_uuid, user,
 
 def start_instance(esh_driver, esh_instance,
                    provider_uuid, identity_uuid, user,
-                   restore_ip=True, update_meta=True):
+                   restore_ip=False, update_meta=True):
     """
 
     raise OverQuotaError, OverAllocationError, LibcloudInvalidCredsError
@@ -223,7 +223,7 @@ def start_instance(esh_driver, esh_instance,
 
 def suspend_instance(esh_driver, esh_instance,
                      provider_uuid, identity_uuid,
-                     user, reclaim_ip=True):
+                     user, reclaim_ip=False):
     """
 
     raise LibcloudInvalidCredsError
@@ -567,7 +567,7 @@ def test_capacity(hypervisor_hostname, instance, hypervisor_stats):
 
 def resume_instance(esh_driver, esh_instance,
                     provider_uuid, identity_uuid,
-                    user, restore_ip=True,
+                    user, restore_ip=False,
                     update_meta=True):
     """
     raise OverQuotaError, OverAllocationError, LibcloudInvalidCredsError
@@ -600,7 +600,7 @@ def resume_instance(esh_driver, esh_instance,
 
 def shelve_instance(esh_driver, esh_instance,
                     provider_uuid, identity_uuid,
-                    user, reclaim_ip=True):
+                    user, reclaim_ip=False):
     """
 
     raise LibcloudInvalidCredsError
@@ -627,7 +627,7 @@ def shelve_instance(esh_driver, esh_instance,
 
 def unshelve_instance(esh_driver, esh_instance,
                       provider_uuid, identity_uuid,
-                      user, restore_ip=True,
+                      user, restore_ip=False,
                       update_meta=True):
     """
     raise OverQuotaError, OverAllocationError, LibcloudInvalidCredsError
@@ -652,7 +652,7 @@ def unshelve_instance(esh_driver, esh_instance,
 
 def offload_instance(esh_driver, esh_instance,
                      provider_uuid, identity_uuid,
-                     user, reclaim_ip=True):
+                     user, reclaim_ip=False):
     """
 
     raise LibcloudInvalidCredsError
@@ -1346,7 +1346,7 @@ def user_delete_security_group(core_identity):
 
 def security_group_init(core_identity, max_attempts=3):
     has_secret = core_identity.get_credential('secret') is not None
-    security_group_name = core_identity.provider.get_config("network", "security_group_name", "default")
+    security_group_name = core_identity.provider.get_config("network", "security_group_name", "giji")
     if has_secret:
         return admin_security_group_init(core_identity)
     return user_security_group_init(core_identity, security_group_name = security_group_name)
