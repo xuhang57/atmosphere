@@ -1,7 +1,7 @@
 # atmosphere :cloud:
 
 [![Build Status](https://travis-ci.org/CCI-MOC/giji-backend.svg?branch=giji-v27-changes)](https://travis-ci.org/CCI-MOC/giji-backend)
-[![Coverage Status](https://coveralls.io/repos/github/CCI-MOC/giji-backend/badge.svg?branch=giji-v27-changes)](https://coveralls.io/github/CCI-MOC/giji-backend?branch=giji-v27-changes)
+[![Coverage Status](https://coveralls.io/repos/github/CCI-MOC/giji-backend/badge.svg)](https://coveralls.io/github/CCI-MOC/giji-backend)
 [![Code Health](https://landscape.io/github/CCI-MOC/giji-backend/giji-v27-changes/landscape.svg?style=flat)](https://landscape.io/github/CCI-MOC/giji-backend/giji-v27-changes)
 
 
