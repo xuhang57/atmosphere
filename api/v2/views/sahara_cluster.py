@@ -80,11 +80,9 @@ class ClusterViewSet(AuthViewSet):
         heat_template['parameters']['private_net']['default'] = str(net_id)
         heat_template['parameters']['plugin']['default'] = str(plugin_name)
         heat_template['parameters']['version']['default'] = str(hadoop_version)
+        heat_template['parameters']['worker_count']['default'] = str(worker_number)
+        heat_template['parameters']['name']['default'] = str(name)
 
-        heat_template['resources']['giji_cluster']['properties']['name'] = str(name)
-        heat_template['resources']['giji_ct_tmpl']['properties']['node_groups'][1]['count'] = str(worker_number)
-
-        logger.debug(heat_template)
         try:
             stackCreate = network_driver.heat.stacks.create(stack_name=name, template=heat_template, files=files)
         except Exception as e:
