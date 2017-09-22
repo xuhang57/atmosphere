@@ -715,10 +715,10 @@ def get_chain_from_active_with_ip(
     deploy_user_task = _deploy_instance_for_user.si(
         driverCls, provider, identity, instance.id,
         username, None, redeploy)
-    check_vnc_task = check_process_task.si(
-        driverCls, provider, identity, instance.id)
-    check_web_desktop = check_web_desktop_task.si(
-        driverCls, provider, identity, instance.id)
+    #check_vnc_task = check_process_task.si(
+    #    driverCls, provider, identity, instance.id)
+    #check_web_desktop = check_web_desktop_task.si(
+    #    driverCls, provider, identity, instance.id)
     remove_status_chain = get_remove_status_chain(
         driverCls,
         provider,
@@ -746,12 +746,15 @@ def get_chain_from_active_with_ip(
     deploy_ready_task.link_error(
         deploy_failed.s(driverCls, provider, identity, instance.id))
     deploy_meta_task.link(deploy_task)
-    deploy_task.link(check_web_desktop)
-    check_web_desktop.link(check_vnc_task)  # Above this line, atmo is responsible for success.
-
-    check_web_desktop.link_error(
+    deploy_task.link(deploy_user_task)
+    deploy_task.link_error(
         deploy_failed.s(driverCls, provider, identity, instance.id))
-    check_vnc_task.link(deploy_user_task)  # this line and below, user can create a failure.
+    #deploy_task.link(check_web_desktop)
+    #check_web_desktop.link(check_vnc_task)  # Above this line, atmo is responsible for success.
+
+    #check_web_desktop.link_error(
+    #    deploy_failed.s(driverCls, provider, identity, instance.id))
+    #check_vnc_task.link(deploy_user_task)  # this line and below, user can create a failure.
     # ready -> metadata -> deployment..
 
     deploy_user_task.link(remove_status_chain)
@@ -876,9 +879,9 @@ def deploy_ready_test(driverCls, provider, identity, instance_id,
         deploy_ready_test.retry(exc=exc)
     # USE ANSIBLE
     try:
-        username = identity.user.username
-        playbooks = ansible_ready_to_deploy(instance.ip, username, instance_id)
-        _update_status_log(instance, "Ansible Finished (ready test) for %s." % instance.ip)
+        #username = identity.user.username
+        #playbooks = ansible_ready_to_deploy(instance.ip, username, instance_id)
+        #_update_status_log(instance, "Ansible Finished (ready test) for %s." % instance.ip)
         celery_logger.debug("deploy_ready_test task finished at %s." % datetime.now())
     except AnsibleDeployException as exc:
         deploy_ready_test.retry(exc=exc)
@@ -918,9 +921,9 @@ def _deploy_instance_for_user(driverCls, provider, identity, instance_id,
         celery_logger.exception(exc)
         _deploy_instance.retry(exc=exc)
     try:
-        username = identity.user.username
-        user_deploy(instance.ip, username, instance_id)
-        _update_status_log(instance, "Ansible Finished for %s." % instance.ip)
+        #username = identity.user.username
+        #user_deploy(instance.ip, username, instance_id)
+        #_update_status_log(instance, "Ansible Finished for %s." % instance.ip)
         celery_logger.debug("_deploy_instance_for_user task finished at %s." % datetime.now())
     except AnsibleDeployException as exc:
         celery_logger.exception(exc)
@@ -963,9 +966,9 @@ def _deploy_instance(driverCls, provider, identity, instance_id,
         celery_logger.exception(exc)
         _deploy_instance.retry(exc=exc)
     try:
-        username = identity.user.username
-        instance_deploy(instance.ip, username, instance_id)
-        _update_status_log(instance, "Ansible Finished for %s." % instance.ip)
+        #username = identity.user.username
+        #instance_deploy(instance.ip, username, instance_id)
+        #_update_status_log(instance, "Ansible Finished for %s." % instance.ip)
         celery_logger.debug("_deploy_instance task finished at %s." % datetime.now())
     except AnsibleDeployException as exc:
         celery_logger.exception(exc)
