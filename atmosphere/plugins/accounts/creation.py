@@ -1,7 +1,8 @@
 from threepio import logger
 from jetstream.allocation import TASAPIDriver
 from cyverse.api import GrouperDriver
-from django_cyverse_auth.protocol.ldap import get_groups_for
+from core.models import AtmosphereUser
+from django_cyverse_auth.protocol.ldap import get_groups_for, lookupUser
 from django.conf import settings
 
 class AccountCreationPlugin(object):
@@ -37,7 +38,7 @@ class AccountCreationPlugin(object):
                 contains_credential('key', username)
             )
 
-    def create_accounts(self, provider, username, force=False):
+    def create_accounts(self, provider, username, force=False, raise_exception=False):
         from service.driver import get_account_driver
         from core.models import Project, Identity
         credentials_list = self.get_credentials_list(provider, username)
@@ -45,6 +46,7 @@ class AccountCreationPlugin(object):
         for credentials in credentials_list:
             try:
                 project_name = credentials['project_name']
+                email = credentials.pop('email')
                 created_identities = self.find_accounts(provider, **credentials)
                 if created_identities and not force:
                     # logger.debug(
@@ -54,6 +56,10 @@ class AccountCreationPlugin(object):
                 logger.debug(
                     "Creating new account for %s with credentials - %s"
                     % (username, credentials))
+                #HOTFIX- FIXME: This line should be updated to make AtmosphereUser creation
+                # (Including email, first,last) as an explicit part of account creation plugin
+                # account_driver _expects_ user to exist prior to creation of identity.
+                atmo_user = AtmosphereUser.objects.get_or_create(username=username)
                 account_driver = get_account_driver(provider)
                 if not account_driver:
                     raise ValueError(
@@ -83,6 +89,8 @@ class AccountCreationPlugin(object):
                 logger.exception(
                     "Could *NOT* Create NEW account for %s"
                     % username)
+                if raise_exception:
+                    raise
         return identities
 
     def delete_accounts(self, provider, username):
@@ -124,6 +132,7 @@ class UserGroup(AccountCreationPlugin):
         credentials_list = []
         credentials_list.append({
             'username': username,
+            'email': "%s@localhost" % username,
             'project_name': username,
             'account_user': username,
             'group_name': username,
@@ -175,10 +184,17 @@ class LDAPMapper(AccountCreationPlugin):
         credentials_list = []
         if settings.ENABLE_PROJECT_SHARING:
             ldap_groups = get_groups_for(username)
+            ldap_account = lookupUser(username)
+            email = "%s@localhost" % username
+            try:
+                email = ldap_account.get('mail')[0]
+            except:
+                pass
             for group in ldap_groups:
                 credentials_list.append({
                     'account_user': username,
                     'username': username,
+                    'email': email,
                     'project_name': group,
                     'group_name': group,
                     'is_leader': False,

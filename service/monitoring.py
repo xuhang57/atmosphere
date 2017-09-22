@@ -148,6 +148,11 @@ def get_allocation_result_for(
 
 def _execute_provider_action(identity, user, instance, action_name):
     driver = get_cached_driver(identity=identity)
+
+    # NOTE: This if statement is a HACK! It will be removed when IP management is enabled in an upcoming version. -SG
+    reclaim_ip = True if identity.provider.location != 'iPlant Cloud - Tucson' else False
+    # ENDNOTE
+
     logger.info("User %s has gone over their allocation on Instance %s - Enforcement Choice: %s" % (user, instance, action_name))
     try:
         if not action_name:
@@ -159,30 +164,34 @@ def _execute_provider_action(identity, user, instance, action_name):
                 instance,
                 identity.provider.uuid,
                 identity.uuid,
-                user)
+                user,
+                reclaim_ip)
         elif action_name == 'Stop':
             stop_instance(
                 driver,
                 instance,
                 identity.provider.uuid,
                 identity.uuid,
-                user)
+                user,
+                reclaim_ip)
         elif action_name == 'Shelve':
             shelve_instance(
                 driver,
                 instance,
                 identity.provider.uuid,
                 identity.uuid,
-                user)
+                user,
+                reclaim_ip)
         elif action_name == 'Shelve Offload':
             offload_instance(
                 driver,
                 instance,
                 identity.provider.uuid,
                 identity.uuid,
-                user)
+                user,
+                reclaim_ip)
         elif action_name == 'Terminate':
-            destroy_instance(user, identity.uuid, instance)
+            destroy_instance(user, identity.uuid, instance.id)
         else:
             raise Exception("Encountered Unknown Action Named %s" % action_name)
     except ObjectDoesNotExist:
@@ -461,7 +470,7 @@ def allocation_source_overage_enforcement(allocation_source):
     return all_user_instances
 
 
-def filter_allocation_source_instances(allocation_source, esh_instances):
+def filter_allocation_source_instances(allocation_source, user, esh_instances):
     as_instances = []
     for inst in esh_instances:
         core_instance = CoreInstance.objects.filter(created_by=user, provider_alias=inst.id).first()
