@@ -124,7 +124,7 @@ To restore 'basic' functionality, please set settings.ACCOUNT_CREATION_PLUGINS t
         accounts = []
         for AccountCreationPluginCls in cls.load_plugins(cls.list_of_classes):
             plugin = AccountCreationPluginCls()
-            created = plugin.create_accounts(provider=provider, username=username, force=force, raise_exception=raise_exception)
+            created = plugin.create_accounts(provider=provider, username=username, force=force)
             if created:
                 accounts.extend(created)
         return accounts
