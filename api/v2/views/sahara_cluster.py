@@ -1,5 +1,5 @@
 import time
-from heatclient.common import template_utils
+#from heatclient.common import template_utils
 from api.v2.views.base import AuthViewSet, AuthOptionalViewSet
 
 from core.models import AtmosphereUser, Identity
@@ -71,7 +71,7 @@ class ClusterViewSet(AuthViewSet):
             else:
             	raise Exception("Cannot find an image for the plugin")
         image_id = image.id
-
+        '''
         files, heat_template = template_utils.process_template_path("/opt/dev/atmosphere/heat-template.yml")
 
         heat_template['parameters']['image']['default'] = str(image_id)
@@ -100,6 +100,7 @@ class ClusterViewSet(AuthViewSet):
             if not cluster_id:
                 raise Exception("No cluster_id")
         results = [{"id": cluster_id, "clusterName": name, "pluginName": plugin_name, "hadoop_version": hadoop_version, "stackID": stack_id}]
+        '''
         return Response(results, status=status.HTTP_201_CREATED)
 
 
