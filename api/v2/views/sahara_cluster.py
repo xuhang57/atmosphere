@@ -57,15 +57,15 @@ class ClusterViewSet(AuthViewSet):
         image = None
         for img in user_driver.glance.images.list():
             if plugin_name == "spark":
-                if "Sahara: Spark 1.6.0 OCATA" in img.name:
+                if "Sahara: Spark 1.6.0, Trusty" in img.name:
                     image = img
                     break
             elif plugin_name == "vanilla":
-            	if "Sahara: MOC Vanilla 2.7.1 OCATA" in img.name:
+            	if "Sahara: Hadoop 2.7.1 + Spark 1.6.0 on YARN, Trusty" in img.name:
                     image = img
                     break
             elif plugin_name == "storm":
-            	if "Sahara: Storm 1.0.1 OCATA" in img.name:
+            	if "Sahara: Storm 1.0.1, Trusty" in img.name:
                     image = img
                     break
             else:
