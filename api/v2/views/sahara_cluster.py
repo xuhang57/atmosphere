@@ -1,5 +1,5 @@
 import time
-#from heatclient.common import template_utils
+from heatclient.common import template_utils
 from api.v2.views.base import AuthViewSet, AuthOptionalViewSet
 
 from core.models import AtmosphereUser, Identity
@@ -53,7 +53,10 @@ class ClusterViewSet(AuthViewSet):
         network_driver = NetworkManager(session=ses)
         user_driver = UserManager(auth_url=auth_url, auth_token=token, project_name=project_name, domain_name="default", session=ses, version='v3')
         kp = user_driver.nova.keypairs.list()[0]
-        net_id = network_driver.neutron.list_networks()['networks'][0]['id']
+        net_id = None
+        for network in network_driver.neutron.list_networks()['networks']:
+            if not network['router:external']:
+                net_id = network['id']
         image = None
         for img in user_driver.glance.images.list():
             if plugin_name == "spark":
@@ -71,8 +74,8 @@ class ClusterViewSet(AuthViewSet):
             else:
             	raise Exception("Cannot find an image for the plugin")
         image_id = image.id
-        '''
-        files, heat_template = template_utils.process_template_path("/opt/dev/atmosphere/heat-template.yml")
+
+        files, heat_template = template_utils.process_template_path("/opt/dev/atmosphere/{plugin}-template.yml".format(plugin=plugin_name))
 
         heat_template['parameters']['image']['default'] = str(image_id)
         heat_template['parameters']['flavor']['default'] = str(cluster_size['name'])
@@ -100,7 +103,6 @@ class ClusterViewSet(AuthViewSet):
             if not cluster_id:
                 raise Exception("No cluster_id")
         results = [{"id": cluster_id, "clusterName": name, "pluginName": plugin_name, "hadoop_version": hadoop_version, "stackID": stack_id}]
-        '''
         return Response(results, status=status.HTTP_201_CREATED)
 
 
@@ -110,18 +112,25 @@ class ClusterViewSet(AuthViewSet):
     def list(self, request):
         user = self.request.user
         network_driver, user_driver = self.get_network_and_user_driver(user)
+        stack_list = network_driver.heat.stacks.list()
         clusters_list = network_driver.sahara.clusters.list()
         results = []
+        stack_id = None
         for cluster in clusters_list:
+            for stack in stack_list:
+                stackID = stack.id
+                stack_parameter = network_driver.heat.stacks.get(stackID)
+                if cluster.name == stack_parameter.parameters['name']:
+                    stack_id = stackID
             try:
                 ip = cluster.node_groups[0]['instances'][0]['management_ip']
                 results.append({"clusterName": cluster.name, "id": cluster.id,
                 "pluginName": cluster.plugin_name, "clusterStatus":
-                cluster.status, "clusterMasterIP": ip})
+                cluster.status, "clusterMasterIP": ip, "stackID": stack_id})
             except:
                 results.append({"clusterName": cluster.name, "id": cluster.id,
                 "pluginName": cluster.plugin_name, "clusterStatus":
-                cluster.status, "clusterMasterIP": "not associated"})
+                cluster.status, "clusterMasterIP": "not associated", "stackID": stack_id})
         return Response(results, status=status.HTTP_200_OK)
 
 
@@ -153,7 +162,7 @@ class ClusterViewSet(AuthViewSet):
         for cluster in clusters_list:
             results.append({"clusterName": cluster.name, "id": cluster.id, "pluginName": cluster.plugin_name, "clusterStatus": "Luanched"})
         return Response(results, status=status.HTTP_200_OK)
-    
+
     def destroy(self, request, pk=None):
         user = self.request.user
         network_driver, user_driver = self.get_network_and_user_driver(user)
@@ -179,3 +188,4 @@ class ClusterViewSet(AuthViewSet):
         network_driver = NetworkManager(session=ses)
         user_driver = UserManager(auth_url=auth_url, auth_token=token, project_name=project_name, domain_name="default", session=ses, version='v3')
         return network_driver, user_driver
+
