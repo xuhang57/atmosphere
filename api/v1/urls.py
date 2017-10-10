@@ -21,6 +21,7 @@ identity_specific = provider_specific +\
     r'/identity/(?P<identity_uuid>%s)' % uuid_match
 
 urlpatterns = format_suffix_patterns([
+    url(r'^htc_upload/(?P<filename>[^/]+)$', views.HTCUpload.as_view()),
     # E-mail API
     url(r'^email/feedback', views.Feedback.as_view()),
     url(r'^email/support', views.SupportEmail.as_view()),
