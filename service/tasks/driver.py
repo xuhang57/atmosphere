@@ -1139,6 +1139,7 @@ def add_floating_ip(driverCls, provider, identity, core_identity_uuid,
             # Remove unused floating IPs first, so they can be re-used
             driver._clean_floating_ip()
         # ENDNOTE
+        driver = get_driver(driverCls, provider, identity)
 
         instance = driver.get_instance(instance_alias)
         if not instance:

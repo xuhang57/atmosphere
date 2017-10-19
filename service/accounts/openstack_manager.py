@@ -5,9 +5,9 @@ UserManager:
 import time
 import string
 from urlparse import urlparse
-
+import glanceclient
 from django.db.models import ObjectDoesNotExist
-from rtwo.exceptions import NovaOverLimit, KeystoneUnauthorized
+from rtwo.exceptions import NovaOverLimit, KeystoneUnauthorized, GlanceForbidden
 
 #FIXME: Add this exception to rtwo before merge.
 try:
@@ -134,6 +134,7 @@ class AccountDriver(BaseAccountDriver):
         from service.driver import get_esh_driver
 
         self.core_provider = provider
+        self.project_name = provider.get_admin_identity().project_name()
 
         provider_creds = provider.get_credentials()
         self.cloud_config = provider.cloud_config
@@ -149,12 +150,11 @@ class AccountDriver(BaseAccountDriver):
         all_creds.update(provider_creds)
         return all_creds
 
-    def __init__(self, provider=None, *args, **kwargs):
+    def __init__(self, provider, *args, **kwargs):
         super(AccountDriver, self).__init__()
-        if provider:
-            all_creds = self._init_by_provider(provider, *args, **kwargs)
-        else:
-            all_creds = kwargs
+
+        all_creds = self._init_by_provider(provider, *args, **kwargs)
+
         if 'cloud_config' in all_creds:
             self.cloud_config = all_creds['cloud_config']
         if not self.cloud_config:
@@ -495,20 +495,9 @@ class AccountDriver(BaseAccountDriver):
                 public_key=public_key)
         return keypair
 
-    def shared_images_for(self, image_id, status="approved"):
-        if getattr(settings, "REPLICATION_PROVIDER_LOCATION"):
-            from core.models import Provider
-            from service.driver import get_account_driver
-            provider = Provider.objects.get(location=settings.REPLICATION_PROVIDER_LOCATION)
-            acct_driver = get_account_driver(provider)
-            if not acct_driver:
-                raise Exception("Cannot create account_driver for %s" % provider)
-        else:
-            acct_driver = self
-        # acct_driver = self
-        all_projects = {p.id: p for p in acct_driver.list_projects()}
-        shared_with = self.image_manager.shared_images_for(
-            image_id=image_id)
+    def get_image_members(self, image_id, status="approved"):
+        all_projects = {p.id: p for p in self.list_projects()}
+        shared_with = self.image_manager.glance.image_members.list(image_id)
         projects = []
         try:
             for member in shared_with:
@@ -520,10 +509,14 @@ class AccountDriver(BaseAccountDriver):
                 if not project:
                     continue
                 projects.append(project)
+        except glanceclient.exc.HTTPNotFound as exc:
+            # If image is not found, no projects should be added
+            pass
         except GlanceForbidden as exc:
-            if 'Only shared images have members' in exc.details:
-                return projects
-            raise
+            # Skip over exception if image visibility is public/private.
+            if 'Only shared images have members' not in exc.details\
+                    and 'Public images do not have members' not in exc.details:
+                raise
         return projects
 
     @timeout_after(10)
@@ -1204,7 +1197,7 @@ class AccountDriver(BaseAccountDriver):
             return self.get_legacy_glance_client(all_creds)
         # Remove lines above when legacy cloud compatability is removed
         image_creds = self._build_image_creds(all_creds)
-        _, _, glance = self.image_manager._new_connection(**image_creds)
+        _, _, glance, _ = self.image_manager._new_connection(**image_creds)
         return glance
 
     def get_neutron_client(self, all_creds):
@@ -1365,7 +1358,7 @@ class AccountDriver(BaseAccountDriver):
             img_args["auth_url"] = img_args.get('auth_url','').replace("/v2.0","").replace("/tokens", "").replace('/v3','')  # hostname:port (no routes!)
             auth_version = 'v3'
         img_args['version'] = auth_version
-
+        img_args.pop('admin_url',None)
         return img_args
 
     def _build_user_creds(self, credentials):
@@ -1386,6 +1379,7 @@ class AccountDriver(BaseAccountDriver):
         ex_auth_version = user_args.pop("ex_force_auth_version", '2.0_password')
         # Supports v2.0 or v3 Identity
         if ex_auth_version.startswith('2'):
+            user_args.pop('domain_name')
             auth_url_prefix = "/v2.0/"
             auth_version = 'v2.0'
         elif ex_auth_version.startswith('3'):
@@ -1403,6 +1397,7 @@ class AccountDriver(BaseAccountDriver):
         user_args.pop("location", None)
         user_args.pop("router_name", None)
         user_args.pop("ex_project_name", None)
+        user_args.pop("ex_tenant_name", None)
 
         return user_args
 
