@@ -93,11 +93,8 @@ def run_create_accounts(acct_driver, provider, usernames, rebuild=False, admin=F
     identity_total = 0
     account_creation_failed = []
     for username in sorted(usernames):
-        try:
-            new_identities = AccountCreationPluginManager.create_accounts(provider, username, force=rebuild, raise_exception=True)
-        except:
-            account_creation_failed.append(username)
-            continue
+        User.objects.get_or_create(username=username)
+        new_identities = AccountCreationPluginManager.create_accounts(provider, username, force=rebuild)
         if new_identities:
             count = len(new_identities)
             print "%s new identities identity_total for %s." % (count, username)
@@ -106,7 +103,6 @@ def run_create_accounts(acct_driver, provider, usernames, rebuild=False, admin=F
         if admin:
             make_admin(username)
     print "%s Total identities identity_total for %s users" % (identity_total, user_total)
-    print "%s Total usernames failed to be created: %s" % (len(account_creation_failed), account_creation_failed)
 
 
 def make_admin(username):
