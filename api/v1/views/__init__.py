@@ -39,3 +39,5 @@ from api.v1.views.token import TokenEmulate
 from api.v1.views.volume import BootVolume,\
     VolumeSnapshot, VolumeSnapshotDetail,\
     VolumeList, Volume
+from api.v1.views.htc_upload import HTCUpload
+from api.v1.views.htc_upload_data import HTCDataUpload
