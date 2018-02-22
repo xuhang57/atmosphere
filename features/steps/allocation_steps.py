@@ -26,7 +26,7 @@ def create_admin_user(context, username):
     user.save()
     with modify_settings(AUTHENTICATION_BACKENDS={
         'prepend': 'django.contrib.auth.backends.ModelBackend',
-        'remove': ['django_cyverse_auth.authBackends.MockLoginBackend']
+        'remove': ['django_giji_auth.authBackends.MockLoginBackend']
     }):
         context.user = user
         context.client.login(username=username, password=username)
@@ -40,7 +40,7 @@ def create_user_with_username(context, username):
     user.save()
     with modify_settings(AUTHENTICATION_BACKENDS={
         'prepend': 'django.contrib.auth.backends.ModelBackend',
-        'remove': ['django_cyverse_auth.authBackends.MockLoginBackend']
+        'remove': ['django_giji_auth.authBackends.MockLoginBackend']
     }):
         context.user = user
         context.client.login(username=username, password=username)
