@@ -83,7 +83,7 @@ INSTALLED_APPS = (
     #'sslserver',
 
     # Cyverse libraries
-    'django_cyverse_auth',
+    'django_giji_auth',
     'rtwo',
 
     # atmosphere apps
