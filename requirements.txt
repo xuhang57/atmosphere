@@ -33,7 +33,7 @@ deprecation==1.0.1        # via openstacksdk
 django-celery-beat==1.0.1
 django-cors-headers==2.1.0
 django-filter==1.0.4
-django-giji-auth==1.1.0
+django-giji-auth==1.1.1
 django-memoize==2.1.0
 django-redis-cache==1.7.1
 django-sslserver==0.20
