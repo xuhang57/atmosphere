@@ -622,7 +622,8 @@ def allocation_source_overage_enforcement_for_user(allocation_source, user):
 
 @task(name="monitor_instances_for")
 def monitor_instances_for(provider_id, users=None,
-                          print_logs=False, start_date=None, end_date=None):
+                          projects=None, print_logs=False,
+                          start_date=None, end_date=None):
     """
     Run the set of tasks related to monitoring instances for a provider.
     Optionally, provide a list of usernames to monitor
@@ -634,7 +635,7 @@ def monitor_instances_for(provider_id, users=None,
     # For now, lets just ignore everything that isn't openstack.
     if 'openstack' not in provider.type.name.lower():
         return
-    instance_map = _get_instance_owner_map(provider, users=users)
+    instance_map = _get_instance_owner_map(provider, users=users, projects=projects)
 
     if print_logs:
         console_handler = _init_stdout_logging()
@@ -692,6 +693,8 @@ def monitor_volumes_for(provider_id, print_logs=False):
     While debugging, print_logs=True can be very helpful.
     start_date and end_date allow you to search a 'non-standard' window of time.
     """
+    # Currently we are not syncing user's volumes in giji
+    return None
     from service.driver import get_account_driver
     from core.models import Identity
     if print_logs:
@@ -758,6 +761,8 @@ def monitor_sizes_for(provider_id, print_logs=False):
     While debugging, print_logs=True can be very helpful.
     start_date and end_date allow you to search a 'non-standard' window of time.
     """
+    # Currently we are not syncing flavors in giji
+    return None
     from service.driver import get_admin_driver
 
     if print_logs:

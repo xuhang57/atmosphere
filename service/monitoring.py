@@ -36,11 +36,11 @@ def _include_all_idents(identities, owner_map):
     return owner_map
 
 
-def _make_instance_owner_map(instances, users=None):
+def _make_instance_owner_map(instances, projects=None):
     owner_map = {}
 
     for i in instances:
-        if users and i.owner not in users:
+        if projects and i.owner not in projects:
             continue
         key = i.owner
         instance_list = owner_map.get(key, [])
@@ -319,7 +319,7 @@ def _resolve_history_conflict(
     return new_history
 
 
-def _get_instance_owner_map(provider, users=None):
+def _get_instance_owner_map(provider, users=None, projects=None):
     """
     All keys == All identities
     Values = List of identities / username
@@ -333,11 +333,12 @@ def _get_instance_owner_map(provider, users=None):
     all_identities = _select_identities(provider, users)
     acct_providers = AccountProvider.objects.filter(provider=provider)
     if acct_providers:
-        account_identity = acct_providers[0].identity
         provider = None
+        user = User.objects.get(username=users[0])
+        ident = Identity.objects.get(created_by=user)
+        account_identity = ident
     else:
         account_identity = None
-
 
     all_instances = get_cached_instances(provider=provider, identity=account_identity, force=True)
     #all_tenants = admin_driver._connection._keystone_list_tenants()
@@ -345,7 +346,7 @@ def _get_instance_owner_map(provider, users=None):
     # Convert instance.owner from tenant-id to tenant-name all at once
     all_instances = _convert_tenant_id_to_names(all_instances, all_tenants)
     # Make a mapping of owner-to-instance
-    instance_map = _make_instance_owner_map(all_instances, users=users)
+    instance_map = _make_instance_owner_map(all_instances, projects=projects)
     logger.info("Instance owner map created")
     identity_map = _include_all_idents(all_identities, instance_map)
     logger.info("Identity map created")

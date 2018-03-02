@@ -88,6 +88,7 @@ router.register(r'volumes', views.VolumeViewSet, base_name='volume')
 router.register(r'sahara_plugins', views.SaharaPluginViewSet, base_name='sahara_plugin')
 router.register(r'sahara_clusters', views.ClusterViewSet, base_name='sahara_cluster')
 router.register(r'sahara_jobs', views.JobViewSet, base_name='sahara_job')
+router.register(r'sync_instances', views.SyncInstance, base_name='sync_instance')
 router.register(r'ssh_keys', views.SSHKeyViewSet, base_name='ssh_key')
 router.register(r'version', base_views.VersionViewSet,
                 base_name='version-atmo')

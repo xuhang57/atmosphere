@@ -916,7 +916,12 @@ class AccountDriver(BaseAccountDriver):
         return project_map
 
     def list_all_instances(self, **kwargs):
-        return self.admin_driver.list_all_instances(**kwargs)
+        if not getattr(self, 'instance_list', None) or force:
+            logger.info("Caching a copy of instance list")
+            self.instance_list = self.user_manager.list_instances(**kwargs)
+            return self.instance_list
+        logger.info("Returning cached copy of instance list")
+        return self.instance_list
 
     def list_all_images(self, **kwargs):
         all_images = self.image_manager.list_images(**kwargs)
@@ -994,6 +999,7 @@ class AccountDriver(BaseAccountDriver):
     def clear_local_cache(self):
         logger.info("Clearing the cached project-list")
         self.project_list = []
+        self.instance_list = []
 
     def list_projects(self, force=False, **kwargs):
         """
