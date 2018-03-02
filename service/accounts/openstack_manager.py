@@ -916,7 +916,7 @@ class AccountDriver(BaseAccountDriver):
         return project_map
 
     def list_all_instances(self, **kwargs):
-        if not getattr(self, 'instance_list', None) or force:
+        if not getattr(self, 'instance_list', None):
             logger.info("Caching a copy of instance list")
             self.instance_list = self.user_manager.list_instances(**kwargs)
             return self.instance_list
