@@ -39,3 +39,4 @@ from api.v1.views.token import TokenEmulate
 from api.v1.views.volume import BootVolume,\
     VolumeSnapshot, VolumeSnapshotDetail,\
     VolumeList, Volume
+from api.v1.views.conclave_upload import ConclaveUpload

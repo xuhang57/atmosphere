@@ -21,6 +21,9 @@ identity_specific = provider_specific +\
     r'/identity/(?P<identity_uuid>%s)' % uuid_match
 
 urlpatterns = format_suffix_patterns([
+    # Conclave API
+    url(r'^conclave_upload/(?P<filename>[^/]+)$', views.ConclaveUpload.as_view()),
+
     # E-mail API
     url(r'^email/feedback', views.Feedback.as_view()),
     url(r'^email/support', views.SupportEmail.as_view()),

@@ -59,3 +59,5 @@ from .ssh_key import SSHKeyViewSet
 from .sahara_plugin import SaharaPluginViewSet
 from .sahara_cluster import ClusterViewSet
 from .sahara_job import JobViewSet
+from .conclave_file import FileViewSet
+from .conclave_data import DataSourceViewSet
