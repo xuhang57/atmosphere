@@ -19,7 +19,7 @@ class DataSourceViewSet(AuthViewSet):
 
     def list(self, request, *args, **kwargs):
         dataverse_server = 'http://128.31.24.163:8080' # no trailing slash
-        api_key = 'f86fa7e2-29be-4c00-b6d2-b83acb6e5f4b'
+        api_key = 'we can get the api key from the Cloud Dataverse test server'
         if not request.GET.get("doi_id"):
             return Response([], status=status.HTTP_200_OK)
         doi_id = request.GET.get("doi_id")
