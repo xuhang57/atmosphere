@@ -31,8 +31,8 @@ class ConclaveUpload(AuthAPIView):
             current += 1
         with open('/shared_directory/uploaded_script%d.py' % (current), 'wb+') as destination:
             for line in f.readlines():
-                if not "WebKitFormBoundary" in line:
-                    if not "Content" in line:
+                if "WebKitFormBoundary" not in line:
+                    if "Content" not in line:
                         if line.replace("\r", "").rstrip():
                             logger.debug("inline")
                             destination.write(line.replace("\r", ""))
